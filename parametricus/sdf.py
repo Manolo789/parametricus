@@ -1,5 +1,5 @@
 """
-paracad.sdf
+parametricus.sdf
 ===========
 Núcleo geométrico baseado em Campos de Distância Assinada (SDF).
 
@@ -32,6 +32,46 @@ def _vec(v: Vec3) -> np.ndarray:
         v = v()
     return np.asarray([_val(c) if callable(c) else c for c in v],
                       dtype=np.float64)
+
+
+# Margem de poda por caixa envolvente (em unidades do modelo). 0 = desativada.
+# Definida pelo mesher durante a amostragem da grade (>= 1 diagonal de célula,
+# para manter exata a interpolação do Marching Cubes junto à superfície).
+_PRUNE_MARGIN = 0.0
+
+
+class prune_margin:
+    """Context manager que ativa a poda por bbox durante a avaliação."""
+
+    def __init__(self, margin: float):
+        self.margin = float(margin)
+
+    def __enter__(self):
+        global _PRUNE_MARGIN
+        self._old, _PRUNE_MARGIN = _PRUNE_MARGIN, self.margin
+
+    def __exit__(self, *exc):
+        global _PRUNE_MARGIN
+        _PRUNE_MARGIN = self._old
+
+
+def _pruned(child: "SDF", p: np.ndarray) -> np.ndarray:
+    """Avalia child.distance apenas perto do bbox do filho; longe dele,
+    devolve a distância à própria caixa — uma cota inferior positiva do SDF
+    (o sólido está contido no bbox), que preserva o sinal do campo e,
+    portanto, o nível zero."""
+    if _PRUNE_MARGIN <= 0.0:
+        return child.distance(p)
+    bmin, bmax = child.bounds()
+    d_box = np.linalg.norm(np.maximum(np.maximum(bmin - p, p - bmax), 0.0), axis=1)
+    near = d_box <= _PRUNE_MARGIN
+    n_near = int(near.sum())
+    if n_near == len(p):
+        return child.distance(p)
+    out = d_box
+    if n_near:
+        out[near] = child.distance(p[near])
+    return out
 
 
 # ============================================================== classe base
@@ -97,7 +137,20 @@ class SDF:
         return result
 
     def array_polar(self, count: int, axis: Vec3 = (0, 0, 1)) -> "SDF":
-        """Padrão polar: `count` cópias distribuídas em 360° ao redor do eixo."""
+        """Padrão polar: `count` cópias distribuídas em 360° ao redor do eixo.
+        Para o eixo Z (o caso comum) usa repetição de domínio (PolarArray),
+        que avalia o filho no máximo 3x independentemente de `count`;
+        para eixos arbitrários ou preguiçosos, usa a cadeia de uniões.
+        """
+        count = int(count)
+        if count <= 1:
+            return self
+        if not callable(axis):
+            ax = np.asarray(axis, dtype=np.float64)
+            ax = ax / np.linalg.norm(ax)
+            if np.allclose(ax, [0.0, 0.0, 1.0]):
+                return PolarArray(self, count)
+        
         result: SDF = self
         for i in range(1, count):
             ang = 360.0 * i / count
@@ -227,7 +280,7 @@ class Capsule(SDF):
 
 # ============================================== recursos baseados em esboço
 class Extrude(SDF):
-    """Extrusão linear de um perfil 2D (paracad.sketch.Profile) em Z."""
+    """Extrusão linear de um perfil 2D (parametricus.sketch.Profile) em Z."""
     name = "Extrusão"
 
     def __init__(self, profile, height: Scalar):
@@ -282,7 +335,7 @@ class Union_(_Binary):
     name = "União"
 
     def distance(self, p):
-        return np.minimum(self.a.distance(p), self.b.distance(p))
+        return np.minimum(_pruned(self.a, p), _pruned(self.b, p))
 
 
 class Intersection(_Binary):
@@ -301,7 +354,7 @@ class Difference(_Binary):
     name = "Subtração"
 
     def distance(self, p):
-        return np.maximum(self.a.distance(p), -self.b.distance(p))
+        return np.maximum(self.a.distance(p), -_pruned(self.b, p))
 
     def bounds(self):
         return self.a.bounds()
@@ -400,7 +453,9 @@ class Scale(SDF):
 
     def distance(self, p):
         f = _val(self.factor)
-        return self.child.distance(p / f) * f
+        # a poda mede distâncias no espaço do filho; ajusta a margem à métrica
+        with prune_margin(_PRUNE_MARGIN / f if f > 0 else 0.0):
+            return self.child.distance(p / f) * f
 
     def bounds(self):
         cmin, cmax = self.child.bounds()
@@ -432,6 +487,44 @@ class Mirror(SDF):
         refl = corners - 2.0 * np.outer(corners @ n, n)
         allc = np.vstack([corners, refl])
         return allc.min(axis=0), allc.max(axis=0)
+
+
+class PolarArray(SDF):
+    """Padrão polar ao redor de Z por repetição de domínio: dobra o ângulo
+    de cada ponto para o setor fundamental e avalia o filho 3x (setor mais
+    próximo e vizinhos), em vez de `count` uniões/rotações.
+    Exato quando cada cópia não se estende além dos setores adjacentes —
+    o caso típico de furos e features em padrão circular. Para filhos que
+    abraçam mais de dois setores, use a cadeia de uniões (array_polar com
+    eixo diferente de Z)."""
+    name = "Padrão polar"
+
+    def __init__(self, child: SDF, count: int):
+        self.child, self.count = child, int(count)
+
+    def distance(self, p):
+        sector = 2.0 * np.pi / self.count
+        ang = np.arctan2(p[:, 1], p[:, 0])
+        k = np.round(ang / sector)
+        d = None
+        for dk in (-1.0, 0.0, 1.0):
+            rot = (k + dk) * sector
+            c, s = np.cos(rot), np.sin(rot)
+            q = np.empty_like(p)
+            q[:, 0] = c * p[:, 0] + s * p[:, 1]
+            q[:, 1] = -s * p[:, 0] + c * p[:, 1]
+            q[:, 2] = p[:, 2]
+            di = self.child.distance(q)
+            d = di if d is None else np.minimum(d, di)
+        return d
+
+    def bounds(self):
+        cmin, cmax = self.child.bounds()
+        # varredura rotacional: raio máximo dos cantos do bbox do filho
+        corners = np.array([[x, y] for x in (cmin[0], cmax[0])
+                            for y in (cmin[1], cmax[1])])
+        r = float(np.sqrt((corners ** 2).sum(axis=1)).max())
+        return np.array([-r, -r, cmin[2]]), np.array([r, r, cmax[2]])
 
 
 # ==================================================== operações de engenharia

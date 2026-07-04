@@ -11,8 +11,8 @@ import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import math
-from paracad import Document, Extrude, Cone, Translate
-from paracad.sketch import RegularPolygonProfile, CircleProfile
+from parametricus import Document, Extrude, Cone, Translate
+from parametricus.sketch import RegularPolygonProfile, CircleProfile
 
 doc = Document("Porca M10")
 P = doc.params
@@ -55,6 +55,6 @@ P.set("rosca", 16)
 print(doc.report(resolution=100))
 doc.export_stl("porca_m16.stl", resolution=140)
 
-from paracad.viewer import show_mesh
+from parametricus.viewer import show_mesh
 show_mesh(doc.mesh, title="Porca M16", color="#8a8f98",
           save_path="porca_m16.png", show=False)

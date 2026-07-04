@@ -8,7 +8,7 @@ Software de design assistido por computador (CAD) com enfoque em **modelagem par
 pip install numpy scikit-image matplotlib
 ```
 
-Coloque a pasta `paracad/` no seu projeto (ou adicione ao `PYTHONPATH`).
+Coloque a pasta `parametricus/` no seu projeto (ou adicione ao `PYTHONPATH`).
 
 ## Conceitos
 
@@ -18,13 +18,13 @@ Coloque a pasta `paracad/` no seu projeto (ou adicione ao `PYTHONPATH`).
 | `SDF` e subclasses | `sdf.py` | Árvore de construção (CSG): primitivas, booleanas, transformações e operações de engenharia. Dimensões podem ser *lambdas* ligadas aos parâmetros. |
 | `Profile` | `sketch.py` | Esboços 2D (círculo, retângulo, polígono, polígono regular) com booleanas próprias, para `Extrude` e `Revolve`. |
 | `Document` | `document.py` | Documento paramétrico: parâmetros + histórico de features + regeneração + exportação + relatório de propriedades de massa. |
-| `generate_mesh` / `Mesh` | `mesher.py` | Marching Cubes, volume/área/centroide, exportação **STL binário** e **OBJ**. |
+| `generate_mesh` / `Mesh` | `mesher.py` | Geração de malha por Marching Cubes em blocos (float32, memória limitada), volume/área/centroide, exportação **STL binário** e **OBJ**, estatísticas em `mesh.stats`. Algoritmos alternativos implementam a interface `MeshGenerator`. |
 | `show_mesh` | `viewer.py` | Visualizador 3D (matplotlib) com sombreamento e escala real; salva PNG. |
 
 ## Exemplo mínimo
 
 ```python
-from paracad import Document, Box, Cylinder
+from parametricus import Document, Box, Cylinder
 
 doc = Document("Placa furada")
 P = doc.params
@@ -90,7 +90,15 @@ relatório paramétrico, exporta STL e salva uma imagem PNG do modelo.
 
 - **64** — rascunho rápido (pré-visualização)
 - **96–128** — padrão (boa para impressão 3D)
-- **192–256** — alta fidelidade (mais lento e mais memória)
+- **192–256** — alta fidelidade (mais lento)
+
+O volume é amostrado em blocos (chunks) e o campo escalar fica em
+float32, então a memória cresce com `resolution³ × 4 bytes` apenas —
+resoluções altas são viáveis sem materializar a grade de pontos inteira.
+`generate_mesh(..., verbose=True)` (ou `mesh.stats`) mostra tempo de
+amostragem/extração, voxels avaliados, triângulos e pico estimado de
+memória. Para algoritmos de malha alternativos (ex.: octree adaptativa),
+implemente `MeshGenerator` e passe em `generate_mesh(..., generator=...)`.
 
 O relatório inclui volume, área de superfície, dimensões e centroide —
 úteis para verificação de projeto e estimativa de massa

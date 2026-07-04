@@ -1,5 +1,5 @@
 """
-paracad.document
+parametricus.document
 ================
 Documento paramétrico: reúne o conjunto de parâmetros, a árvore de
 features (histórico de construção) e a regeneração do modelo.
@@ -48,6 +48,7 @@ class Document:
         self._body_fn: Optional[Callable[[ParameterSet], SDF]] = None
         self.body: Optional[SDF] = None
         self.mesh: Optional[Mesh] = None
+        self._mesh_resolution: Optional[int] = None
         self._dirty = True
         self.params.on_change(self._mark_dirty)
 
@@ -85,16 +86,20 @@ class Document:
         t1 = time.perf_counter()
 
         self.mesh = generate_mesh(self.body, resolution=resolution)
+        self._mesh_resolution = resolution
         t2 = time.perf_counter()
         self._dirty = False
 
         if verbose:
+            st = self.mesh.stats
+            extra = (f" — {st.voxels:,} voxels, {st.n_triangles:,} triângulos, "
+                     f"~{st.peak_memory_mb:.0f} MB de pico" if st else "")
             print(f"[{self.name}] árvore reconstruída em {(t1 - t0)*1e3:.1f} ms, "
-                  f"malha ({resolution}³ eq.) em {(t2 - t1)*1e3:.0f} ms")
+                  f"malha ({resolution}³ eq.) em {(t2 - t1)*1e3:.0f} ms{extra}")
         return self.mesh
 
     def _ensure_mesh(self, resolution: int) -> Mesh:
-        if self.mesh is None or self._dirty:
+        if self.mesh is None or self._dirty or (self._mesh_resolution != resolution):
             self.rebuild(resolution=resolution)
         return self.mesh
 

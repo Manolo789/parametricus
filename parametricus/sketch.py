@@ -1,5 +1,5 @@
 """
-paracad.sketch
+parametricus.sketch
 ==============
 Perfis 2D (esboços) usados por Extrude e Revolve — o fluxo clássico
 "sketch -> feature" de sistemas CAD paramétricos.

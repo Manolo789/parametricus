@@ -11,8 +11,8 @@ Execução:  python examples/exemplo_caneca.py
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from paracad import Document, Revolve, Torus, Rotate, Translate, Cylinder
-from paracad.sketch import RectProfile
+from parametricus import Document, Revolve, Torus, Rotate, Translate, Cylinder
+from parametricus.sketch import RectProfile
 
 doc = Document("Caneca 350ml")
 P = doc.params
@@ -68,15 +68,14 @@ doc.add_feature("Alça toroidal", lambda P: Torus(P["r_alca"], P["tubo_alca"]),
                 "união com filete suave")
 doc.set_body(corpo)
 
-print(doc.report(resolution=100))
-doc.export_stl("caneca_350ml.stl", resolution=150)
+#print(doc.report(resolution=100))
+#doc.export_stl("caneca_350ml.stl", resolution=150)
 
 print("\n>>> Versão 500 ml — só o parâmetro de capacidade muda:\n")
 P.set("capacidade_ml", 500)
 P.set("altura_int", 110)
 print(doc.report(resolution=100))
-doc.export_stl("caneca_500ml.stl", resolution=150)
+#doc.export_stl("caneca_500ml.stl", resolution=150)
 
-from paracad.viewer import show_mesh
-show_mesh(doc.mesh, title="Caneca 500 ml", color="#d97a4a",
-          save_path="caneca_500ml.png", show=False)
+from parametricus.viewer import show_mesh
+show_mesh(doc.mesh, title="Caneca 500 ml", color="#d97a4a", show=True)

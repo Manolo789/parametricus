@@ -11,7 +11,7 @@ Execução:  python examples/exemplo_flange.py
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from paracad import Document, Cylinder, Translate
+from parametricus import Document, Cylinder, Translate
 
 doc = Document("Flange DN80")
 P = doc.params
@@ -71,5 +71,5 @@ print(doc.report(resolution=110))
 doc.export_stl("flange_dn120.stl", resolution=160)
 
 # visualização (salva PNG; use doc.show() para janela interativa)
-from paracad.viewer import show_mesh
+from parametricus.viewer import show_mesh
 show_mesh(doc.mesh, title="Flange DN120", save_path="flange_dn120.png", show=False)

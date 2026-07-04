@@ -1,5 +1,5 @@
 """
-paracad.parameters
+parametricus.parameters
 ==================
 Sistema de parâmetros com suporte a expressões matemáticas e
 resolução automática de dependências (grafo acíclico dirigido).

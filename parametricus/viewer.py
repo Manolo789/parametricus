@@ -1,5 +1,5 @@
 """
-paracad.viewer
+parametricus.viewer
 ==============
 Visualizador 3D simples baseado em matplotlib, com sombreamento por
 normal e eixos em escala real. Também salva imagens (PNG) do modelo.
@@ -12,7 +12,7 @@ import numpy as np
 from .mesher import Mesh
 
 
-def show_mesh(mesh: Mesh, title: str = "paracad", color: str = "#4a90d9",
+def show_mesh(mesh: Mesh, title: str = "parametricus", color: str = "#4a90d9",
               save_path: str | None = None, elev: float = 22, azim: float = -60,
               show: bool = True) -> None:
     import matplotlib

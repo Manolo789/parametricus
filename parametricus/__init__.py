@@ -1,12 +1,12 @@
 """
-paracad — CAD paramétrico 3D em Python
+parametricus — CAD paramétrico 3D em Python
 ======================================
 Modelagem sólida por geometria implícita (SDF) com sistema de
 parâmetros dirigido por expressões, árvore de features, malhagem por
 Marching Cubes e exportação STL/OBJ.
 
 Uso rápido:
-    from paracad import Document, Box, Cylinder
+    from parametricus import Document, Box, Cylinder
 
     doc = Document("Peça")
     P = doc.params
@@ -21,7 +21,7 @@ Uso rápido:
 
 from .parameters import Parameter, ParameterSet, ParameterError
 from .document import Document, Feature
-from .mesher import Mesh, generate_mesh
+from .mesher import Mesh, MeshStats, MeshGenerator, MarchingCubesGenerator, generate_mesh
 from .sdf import (
     SDF,
     # primitivas
@@ -32,6 +32,8 @@ from .sdf import (
     Union_, Intersection, Difference, SmoothUnion, SmoothDifference,
     # transformações
     Translate, Rotate, Scale, Mirror,
+    # padrões
+    PolarArray,
     # engenharia
     Shell, Round,
 )
@@ -43,11 +45,12 @@ from .sketch import (
 __version__ = "1.0.0"
 __all__ = [
     "Document", "Feature", "Parameter", "ParameterSet", "ParameterError",
-    "Mesh", "generate_mesh", "SDF",
+    "Mesh", "MeshStats", "MeshGenerator", "MarchingCubesGenerator",
+    "generate_mesh", "SDF",
     "Sphere", "Box", "Cylinder", "Cone", "Torus", "Capsule",
     "Extrude", "Revolve",
     "Union_", "Intersection", "Difference", "SmoothUnion", "SmoothDifference",
-    "Translate", "Rotate", "Scale", "Mirror", "Shell", "Round",
+    "Translate", "Rotate", "Scale", "Mirror", "PolarArray", "Shell", "Round",
     "Profile", "CircleProfile", "RectProfile",
     "PolygonProfile", "RegularPolygonProfile",
 ]
