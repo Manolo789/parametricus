@@ -78,4 +78,4 @@ print(doc.report(resolution=100))
 #doc.export_stl("caneca_500ml.stl", resolution=150)
 
 from parametricus.viewer import show_mesh
-show_mesh(doc.mesh, title="Caneca 500 ml", color="#d97a4a", show=True)
+show_mesh(doc.mesh, title="Caneca 500 ml", color="#d97a4a", show=True, engine="pyside6")
