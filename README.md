@@ -1,4 +1,4 @@
-# parametricus
+# parametricus v1
 
 Software de design assistido por computador (CAD) com enfoque em **modelagem paramétrica 3D**, escrito em Python puro sobre NumPy. A geometria é representada por **campos de distância assinada (SDF)** — a mesma técnica de kernels implícitos modernos — o que torna operações booleanas, filetes e cascas numericamente robustas e faz com que **todo o modelo se regenere automaticamente quando um parâmetro muda**.
 
