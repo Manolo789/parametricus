@@ -19,7 +19,7 @@ Coloque a pasta `parametricus/` no seu projeto (ou adicione ao `PYTHONPATH`).
 | `Profile` | `sketch.py` | Esboços 2D (círculo, retângulo, polígono, polígono regular) com booleanas próprias, para `Extrude` e `Revolve`. |
 | `Document` | `document.py` | Documento paramétrico: parâmetros + histórico de features + regeneração + exportação + relatório de propriedades de massa. |
 | `generate_mesh` / `Mesh` | `mesher.py` | Geração de malha por Marching Cubes em blocos (float32, memória limitada), volume/área/centroide, exportação **STL binário** e **OBJ**, estatísticas em `mesh.stats`. Algoritmos alternativos implementam a interface `MeshGenerator`. |
-| `show_mesh` | `viewer.py` | Visualizador 3D (matplotlib) com sombreamento e escala real; salva PNG. |
+| `show_mesh` | `viewer.py` | Visualizador 3D multiengine com sombreamento e escala real; salva PNG. |
 
 ## Exemplo mínimo
 
@@ -72,6 +72,20 @@ com perfis `CircleProfile`, `RectProfile(w,h,corner_radius)`,
 **Padrões** — `.array_linear(n, passo)`, `.array_polar(n, eixo)`
 
 **Engenharia** — `.shell(espessura)` (casca oca)
+
+## Engines de visualização
+
+`show_mesh(mesh, engine=...)` (e `doc.show(engine=...)`) aceita:
+
+| Engine | Dependências | Observações |
+|---|---|---|
+| `pyside6` | `PySide6`, `PyOpenGL` | Engine própria em OpenGL 3.3 Core (shaders Phong). |
+| `pyvista` | `pyvista[all]` (VTK) | Recursos completos de cena, porém pesada em memória. |
+| `trimesh` | `trimesh[easy]`, `pyglet<2` | Visualização rápida via trimesh. |
+| `matplotlib` | `matplotlib` | Descontinuada. |
+
+As engines são carregadas de forma preguiçosa: só as dependências da
+engine selecionada precisam estar instaladas.
 
 ## Exemplos incluídos
 
