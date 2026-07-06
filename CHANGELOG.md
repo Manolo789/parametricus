@@ -1,5 +1,75 @@
 CHANGELOG
 
+[2026/07/05 21:40] — v1.1.0 (implementação do roadmap, Fases 1-3 + itens da Fase 4):
+
+Fase 1 — Fundação:
+-Logging padrão de biblioteca (_log.py): logger "parametricus" com NullHandler;
+ enable_console_logging()/disable_console_logging(); prints do mesher/document
+ migrados para logger (DEBUG/INFO/WARNING).
+-Aliases de tipos compartilhados (types.py): Scalar/Vec3/FloatArray e
+ resolve_scalar/resolve_vec3, antes duplicados em sdf.py e sketch.py.
+-Rastreamento de leituras no ParameterSet (tracking()), notificação com o
+ conjunto de parâmetros efetivamente alterados (on_change(cb(changed))),
+ dependents_of() transitivo e set() no-op quando a expressão não muda.
+-Assinatura estrutural nos nós SDF/Profile (signature()): hash dos valores
+ resolvidos (lambdas avaliadas), recursivo nos filhos — base dos caches.
+-Rebuild seletivo no Document: cada feature registra os parâmetros lidos e
+ só regenera se algum deles mudou (ou se uma feature anterior mudou).
+-Malhagem preguiçosa: get_mesh(resolution) com cache (resolução, assinatura)
+ e LRU — rebuilds sem mudança geométrica (inclusive voltar um parâmetro ao
+ valor anterior) reutilizam a malha. preview_resolution/export_resolution.
+
+Fase 2 — Núcleo:
+-Histórico de features encadeado e editável: build(P, prev) recebe o sólido
+ acumulado; corpo = última feature (set_body mantém precedência/compat).
+ suppress/unsuppress, remove_feature, reorder_feature, edit_feature; estados
+ ok/suppressed/error/stale no relatório; feature com erro não derruba o
+ rebuild (segue com o sólido anterior + WARNING).
+-Undo/Redo (padrão Command): mutações de parâmetro (via hook on_mutate do
+ ParameterSet) e todas as edições de histórico; undo_labels para inspeção.
+-Sketch constraints (constraints.py): Point2D/Line2D/Circle2D; restrições
+ fix, coincident, horizontal, vertical, parallel, perpendicular, tangent,
+ symmetric + dimensionais distance/length/angle/radius (aceitam
+ lambda: P["x"]); solver Levenberg-Marquardt em NumPy puro; dof()/dof_report()
+ por posto do Jacobiano; sketch.profile(loop) gera PolygonProfile que
+ re-resolve quando os parâmetros mudam.
+
+Fase 3 — Desempenho e inspeção:
+-PolygonProfile.distance otimizado (2,2-2,7x): o loop original já era
+ vetorizado sobre os pontos; o ganho veio de eliminar temporários 2D
+ (componentes x/y separados, minimum in-place, paridade inteira de
+ cruzamentos). Equivalência numérica validada por regressão.
+-array_linear por repetição de domínio (nó LinearArray): filho avaliado no
+ máximo 3x por ponto, independente de count (antes: cadeia de uniões O(n)).
+-save_obj vetorizado (np.savetxt em blocos).
+-Medições (measure.py): distance_point (exata via SDF), distance_points,
+ angle, bounding_box (SDF ou Mesh, com report()).
+-Seções e cortes: section() (contornos 2D/3D via marching squares, área e
+ perímetro), slice_field() (campo no plano p/ heatmap), primitiva HalfSpace
+ e atalho solido.cut(normal, offset).
+
+Fase 4 — Interoperabilidade (itens sem dependências novas):
+-Exportação PLY binário com normais (Mesh.save_ply).
+-export_mesh/Document.export com despacho por extensão (.stl/.obj/.ply).
+-Importação import_mesh/load_stl (binário e ASCII, com solda de vértices)
+ e load_obj (triangulação em leque), com normais por vértice ponderadas
+ por área. STEP/IGES/GLTF/MeshSDF permanecem no roadmap (exigem OCCT/trimesh).
+
+Materiais (antecipado do longo prazo):
+-materials.py: Material + MATERIALS (Steel, Aluminum, Titanium, ABS, PLA).
+-Mesh.inertia_tensor(density): integração exata sobre tetraedros origem-face,
+ no referencial do centroide; Mesh.mass_properties(); doc.material habilita
+ massa e momentos principais no report(); doc.mass_properties().
+
+Testes:
+-tests/test_roadmap.py: 52 asserções cobrindo todas as fases (validações
+ numéricas contra soluções analíticas: área/perímetro de seção, meia esfera,
+ inércia de caixa, round-trips STL/OBJ).
+-Exemplo novo examples/exemplo_placa_v11.py (tour pela v1.1).
+-Compatibilidade retroativa verificada nos 3 exemplos originais.
+
+CHANGELOG
+
 [2026/07/05 00:36]:
 Implementação de motores gráficos 3D adicionais:
 -Matplotlib foi descontinuado

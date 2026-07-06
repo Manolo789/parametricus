@@ -15,23 +15,53 @@ parâmetros do ParameterSet diretamente à geometria.
 
 from __future__ import annotations
 
+import hashlib
 import numpy as np
-from typing import Callable, List, Sequence, Tuple, Union
+from typing import Any, Callable, List, Sequence, Tuple, Union
 
-Scalar = Union[int, float, Callable[[], float]]
-Vec3 = Union[Sequence[float], Callable[[], Sequence[float]]]
-
-
-def _val(x: Scalar) -> float:
-    """Resolve escalar preguiçoso."""
-    return float(x()) if callable(x) else float(x)
+from .types import Scalar, Vec3, resolve_scalar as _val, resolve_vec3 as _vec
 
 
-def _vec(v: Vec3) -> np.ndarray:
-    if callable(v):
-        v = v()
-    return np.asarray([_val(c) if callable(c) else c for c in v],
-                      dtype=np.float64)
+def _sig(obj: Any, parts: List[bytes]) -> None:
+    """
+    Acumula em ``parts`` uma representação estável do conteúdo de ``obj``,
+    com todos os escalares/vetores preguiçosos RESOLVIDOS para seus valores
+    atuais. É a base do cache inteligente (Fase 1.3): dois nós com a mesma
+    assinatura produzem o mesmo campo de distância.
+    """
+    if obj is None:
+        parts.append(b"none")
+    elif isinstance(obj, (int, float)):
+        parts.append(repr(float(obj)).encode())
+    elif isinstance(obj, str):
+        parts.append(obj.encode())
+    elif isinstance(obj, np.ndarray):
+        parts.append(obj.tobytes())
+    elif isinstance(obj, (list, tuple)):
+        parts.append(b"seq")
+        for item in obj:
+            _sig(item, parts)
+    elif hasattr(obj, "signature") and callable(obj.signature):
+        parts.append(obj.signature().encode())
+    elif callable(obj):
+        # dimensão preguiçosa: resolve para o valor atual
+        try:
+            _sig(obj(), parts)
+        except Exception:
+            parts.append(repr(obj).encode())
+    else:
+        parts.append(repr(obj).encode())
+
+
+def _structural_signature(node: Any) -> str:
+    """Hash estrutural: classe + atributos resolvidos (recursivo)."""
+    parts: List[bytes] = [type(node).__qualname__.encode()]
+    for key in sorted(vars(node)):
+        if key.startswith("_"):
+            continue
+        parts.append(key.encode())
+        _sig(vars(node)[key], parts)
+    return hashlib.blake2b(b"|".join(parts), digest_size=16).hexdigest()
 
 
 # Margem de poda por caixa envolvente (em unidades do modelo). 0 = desativada.
@@ -88,6 +118,17 @@ class SDF:
         """Caixa envolvente aproximada (min, max) — usada pelo mesher."""
         raise NotImplementedError
 
+    def signature(self) -> str:
+        """
+        Assinatura estrutural do nó (Fase 1.3 — cache inteligente).
+
+        Combina a classe, os valores RESOLVIDOS de todas as dimensões
+        (lambdas são avaliadas) e as assinaturas dos filhos. Se a assinatura
+        não mudou entre dois rebuilds, o campo de distância é idêntico e
+        malhas/resultados em cache podem ser reutilizados.
+        """
+        return _structural_signature(self)
+
     # -------------------------------------------------- operadores Python
     def __or__(self, other: "SDF") -> "SDF":           # a | b  -> união
         return Union_(self, other)
@@ -129,12 +170,15 @@ class SDF:
         return Round(self, radius)
 
     def array_linear(self, count: int, step: Vec3) -> "SDF":
-        """Padrão linear: `count` cópias espaçadas por `step`."""
-        result: SDF = self
-        for i in range(1, count):
-            k = i
-            result = result | Translate(self, lambda k=k, s=step: _vec(s) * k)
-        return result
+        """Padrão linear: `count` cópias espaçadas por `step`.
+        Usa repetição de domínio (LinearArray): o filho é avaliado no
+        máximo 3x por ponto, independentemente de `count`, e a árvore
+        permanece rasa (Fase 3.1 do roadmap — antes: cadeia de uniões
+        com profundidade O(n))."""
+        count = int(count)
+        if count <= 1:
+            return self
+        return LinearArray(self, count, step)
 
     def array_polar(self, count: int, axis: Vec3 = (0, 0, 1)) -> "SDF":
         """Padrão polar: `count` cópias distribuídas em 360° ao redor do eixo.
@@ -150,12 +194,20 @@ class SDF:
             ax = ax / np.linalg.norm(ax)
             if np.allclose(ax, [0.0, 0.0, 1.0]):
                 return PolarArray(self, count)
-        
+
         result: SDF = self
         for i in range(1, count):
             ang = 360.0 * i / count
             result = result | Rotate(self, axis, ang)
         return result
+
+    def cut(self, normal: Vec3 = (1, 0, 0), offset: Scalar = 0.0) -> "SDF":
+        """Corte por plano (Fase 3.3): mantém o semiespaço
+        ``dot(p, normal) <= offset``. Útil para vistas em seção:
+
+            doc.set_body(lambda P: peca(P).cut((1, 0, 0)))
+        """
+        return Intersection(self, HalfSpace(normal, offset))
 
 
 # ================================================================ primitivas
@@ -525,6 +577,60 @@ class PolarArray(SDF):
                             for y in (cmin[1], cmax[1])])
         r = float(np.sqrt((corners ** 2).sum(axis=1)).max())
         return np.array([-r, -r, cmin[2]]), np.array([r, r, cmax[2]])
+
+
+class LinearArray(SDF):
+    """Padrão linear por repetição de domínio (Fase 3.1): cada ponto é
+    mapeado para a cópia mais próxima ao longo de ``step`` (e vizinhas
+    imediatas, para exatidão nas bordas), avaliando o filho no máximo 3x
+    por ponto — independentemente de ``count``. Exato quando cada cópia
+    não se sobrepõe além das cópias adjacentes (o caso típico de furos e
+    features em padrão)."""
+    name = "Padrão linear"
+
+    def __init__(self, child: SDF, count: int, step: Vec3):
+        self.child, self.count, self.step = child, int(count), step
+
+    def distance(self, p: np.ndarray) -> np.ndarray:
+        s = _vec(self.step)
+        L2 = float(s @ s)
+        if L2 <= 0.0:
+            return self.child.distance(p)
+        t = (p @ s) / L2                        # índice contínuo da cópia
+        k = np.clip(np.round(t), 0, self.count - 1)
+        d: np.ndarray | None = None
+        for dk in (-1.0, 0.0, 1.0):
+            ki = np.clip(k + dk, 0, self.count - 1)
+            di = self.child.distance(p - ki[:, None] * s)
+            d = di if d is None else np.minimum(d, di)
+        return d
+
+    def bounds(self):
+        cmin, cmax = self.child.bounds()
+        sweep = _vec(self.step) * (self.count - 1)
+        return np.minimum(cmin, cmin + sweep), np.maximum(cmax, cmax + sweep)
+
+
+class HalfSpace(SDF):
+    """Semiespaço ``dot(p, normal) <= offset`` (Fase 3.3 — cortes).
+
+    SDF exato de um plano infinito. Use combinado com interseção
+    (``solido & HalfSpace(...)`` ou ``solido.cut(...)``) para vistas em
+    corte. Os bounds são infinitos — como primitiva isolada não é
+    malhável; a interseção restringe o domínio ao sólido cortado."""
+    name = "Semiespaço"
+
+    def __init__(self, normal: Vec3 = (1, 0, 0), offset: Scalar = 0.0):
+        self.normal, self.offset = normal, offset
+
+    def distance(self, p: np.ndarray) -> np.ndarray:
+        n = _vec(self.normal)
+        n = n / np.linalg.norm(n)
+        return p @ n - _val(self.offset)
+
+    def bounds(self):
+        return (np.array([-np.inf, -np.inf, -np.inf]),
+                np.array([np.inf, np.inf, np.inf]))
 
 
 # ==================================================== operações de engenharia
