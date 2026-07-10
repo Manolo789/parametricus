@@ -1,5 +1,45 @@
 CHANGELOG
 
+[2026/07/10] — v1.1.1 (auditoria dos checkboxes do roadmap + itens pendentes):
+
+Auditoria: os itens marcados [X] foram verificados contra o código e a suíte
+(52 asserções, todas passando). Uma lacuna foi encontrada dentro de um item
+marcado como feito (3.2: faltava a distância mínima ENTRE dois sólidos) e
+corrigida. Checkboxes do roadmap sincronizados com a implementação real.
+
+Novidades:
+-measure.distance_solids(a, b): distância mínima entre dois sólidos —
+ semente em grade grossa + projeções alternadas pelo gradiente dos SDFs;
+ detecta interpenetração (d = 0). measure.face_normal_at(mesh, p) para
+ medir ângulo entre faces planares da malha (complemento do item 3.2).
+-Fase 4.2: exportação GLB (glTF 2.0 binário, escrita direta) e 3MF
+ (ZIP + XML próprios), registradas no despacho por extensão:
+ doc.export("peca.glb") / doc.export("peca.3mf").
+-Fase 4.1: nó MeshSDF — malhas importadas (STL/OBJ) viram SDF e participam
+ de booleanas com geometria paramétrica. Distância exata ponto→triângulo
+ pré-amostrada em grade regular (kNN via SciPy quando disponível, força
+ bruta em blocos caso contrário) + sinal por paridade de raios por linha
+ da grade; consultas por interpolação trilinear.
+-Fase 2.2 (conclusão): doc.undo_limit (profundidade da pilha) e
+ coalescência de mudanças consecutivas do mesmo parâmetro dentro de
+ doc.coalesce_window (arrastar um slider gera 1 entrada de undo).
+-Longo prazo: biblioteca de componentes (parametricus/library.py) —
+ nut(), washer(), hex_bolt(), nut_document() com dimensões ISO M3–M12 e
+ nó HelicalThread (rosca métrica aproximada com reescala de Lipschitz).
+-Fase 1.1 (conclusão parcial): pyproject.toml com configuração gradual do
+ mypy (ignore_missing_imports para skimage/PySide6/SciPy; viewer_backend
+ sob ignore_errors até ser tipado). Empacotamento PEP 621 com extras
+ [viewer], [fast] (SciPy) e [dev].
+-Fase 1.2 (conclusão): últimos 4 print() (backends de visualização)
+ migrados para logger.info.
+
+Pendências remanescentes (dependem de OCCT/ambiente gráfico): STEP/IGES,
+GUI completa, rebuild assíncrono, clipping no shader do viewport, type
+hints do viewer_backend, entidade Arc nos sketch constraints, cache de
+campo escalar por nó SDF.
+
+Suíte ampliada: tests/test_roadmap.py com 71 asserções, todas passando.
+
 [2026/07/05 21:40] — v1.1.0 (implementação do roadmap, Fases 1-3 + itens da Fase 4):
 
 Fase 1 — Fundação:

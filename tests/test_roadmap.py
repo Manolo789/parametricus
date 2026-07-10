@@ -323,4 +323,101 @@ with tempfile.TemporaryDirectory() as tmp:
     ok("MATERIAL: PLA" in rep and "Massa" in rep,
        "report inclui seção de material")
 
+# ------------------------------ Fase 3.2 (complemento): distância entre sólidos
+print("\n[Fase 3.2] distância mínima entre dois sólidos")
+from parametricus import distance_solids, face_normal_at
+
+r1 = distance_solids(Sphere(5), Sphere(5).translate((20, 0, 0)))
+ok(abs(r1.distance - 10.0) < 0.05,
+   f"esferas r=5 a 20 mm: d = {r1.distance:.3f} (~10)")
+ok(not r1.intersecting, "sem interpenetração detectada")
+r2 = distance_solids(Sphere(5), Sphere(5).translate((6, 0, 0)))
+ok(r2.intersecting and r2.distance == 0.0, "interpenetração -> d = 0")
+
+mbox = generate_mesh(Box((20, 20, 20)), resolution=48)
+n_top = face_normal_at(mbox, (0, 0, 10.5))
+n_side = face_normal_at(mbox, (10.5, 0, 0))
+from parametricus import angle as _ang
+ok(abs(_ang(n_top, n_side) - 90.0) < 5.0,
+   f"ângulo entre faces da caixa: {_ang(n_top, n_side):.1f}° (~90)")
+
+# --------------------------------------------- Fase 4.2: GLB e 3MF (novos)
+print("\n[Fase 4.2] exportação GLB e 3MF")
+import zipfile
+
+with tempfile.TemporaryDirectory() as tmp:
+    d4 = Document("Cubo")
+    d4.set_body(lambda P: Box((10, 10, 10)))
+    p_glb = os.path.join(tmp, "peca.glb")
+    d4.export(p_glb, resolution=32)
+    with open(p_glb, "rb") as fh:
+        ok(fh.read(4) == b"glTF", "GLB com magic válido")
+    ok(os.path.getsize(p_glb) > 500, "GLB não vazio")
+
+    p_3mf = os.path.join(tmp, "peca.3mf")
+    d4.export(p_3mf, resolution=32)
+    with zipfile.ZipFile(p_3mf) as zf:
+        names = zf.namelist()
+        ok("3D/3dmodel.model" in names and "[Content_Types].xml" in names,
+           "3MF é ZIP com modelo e content types")
+        ok(b"<triangle" in zf.read("3D/3dmodel.model"),
+           "3MF contém triângulos")
+
+# --------------------------------------------------- Fase 4.1: MeshSDF
+print("\n[Fase 4.1] MeshSDF: booleanas com malhas importadas")
+from parametricus import MeshSDF
+
+m_sph = generate_mesh(Sphere(10), resolution=48)
+msdf = MeshSDF(m_sph, resolution=48)
+d_c = float(msdf.distance(np.array([[0.0, 0.0, 0.0]]))[0])
+d_s = float(msdf.distance(np.array([[15.0, 0.0, 0.0]]))[0])
+ok(abs(d_c + 10.0) < 0.5, f"centro da esfera importada: d = {d_c:.2f} (~-10)")
+ok(abs(d_s - 5.0) < 0.3, f"ponto externo: d = {d_s:.2f} (~5)")
+hybrid = msdf - Box((30, 8, 30))          # importada - paramétrica
+m_h = generate_mesh(hybrid, resolution=48)
+ok(0.3 < m_h.volume() / m_sph.volume() < 0.7,
+   f"booleana malha x paramétrica: vol {m_h.volume():.0f} de "
+   f"{m_sph.volume():.0f}")
+
+# --------------------------------------- Fase 2.2: limite e coalescência
+print("\n[Fase 2.2] undo: limite de profundidade e coalescência")
+d5 = Document("Undo")
+d5.params.define("a", 1)
+d5.coalesce_window = 10.0                  # janela larga p/ teste
+for v in range(2, 12):
+    d5.params.set("a", v)                  # 10 mudanças coalescem em 1
+ok(len(d5.undo_labels) == 1, f"slider coalescido: {len(d5.undo_labels)} entrada")
+d5.undo()
+ok(d5.params["a"] == 1.0, "undo coalescido volta ao valor ORIGINAL")
+
+d6 = Document("Limite")
+d6.params.define("b", 0)
+d6.coalesce_window = 0.0                   # sem coalescência
+d6.undo_limit = 5
+for v in range(1, 21):
+    d6.params.set("b", v)
+ok(len(d6.undo_labels) == 5, f"pilha limitada a {len(d6.undo_labels)} (=5)")
+
+# ---------------------------------------- Longo prazo: biblioteca de componentes
+print("\n[Longo prazo] biblioteca de componentes")
+from parametricus.library import HelicalThread, hex_bolt, nut, nut_document, washer
+
+m_w = generate_mesh(washer("M8"), resolution=64)
+v_ref = math.pi * (8.0 ** 2 - 4.15 ** 2) * 1.6
+ok(abs(m_w.volume() - v_ref) / v_ref < 0.05,
+   f"arruela M8: vol {m_w.volume():.1f} (~{v_ref:.1f})")
+m_n = generate_mesh(nut("M8"), resolution=64)
+ok(m_n.volume() > 500, f"porca M8: vol {m_n.volume():.1f}")
+m_b = generate_mesh(hex_bolt("M6", 20), resolution=64)
+ok(m_b.volume() > 500, f"parafuso M6x20: vol {m_b.volume():.1f}")
+m_t = generate_mesh(HelicalThread(4, 10, 1.25), resolution=72)
+ok(0 < m_t.volume() < math.pi * 16 * 10 * 1.1,
+   f"rosca helicoidal malha fechada: vol {m_t.volume():.1f}")
+dn = nut_document("M8")
+v1 = dn.rebuild(verbose=False).volume()
+dn.params.set("m", 10.0)
+v2 = dn.rebuild(verbose=False).volume()
+ok(abs(v2 / v1 - 10.0 / 6.8) < 0.05,
+   f"porca paramétrica: altura 6.8->10 escala volume {v2/v1:.2f}x (~1.47)")
+
 print(f"\n{PASS} testes passaram.")

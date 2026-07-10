@@ -210,6 +210,12 @@ class Document:
         self._undo_stack: List[_Command] = []
         self._redo_stack: List[_Command] = []
         self._replaying = False
+        #: profundidade máxima da pilha de undo (entradas antigas descartadas)
+        self.undo_limit: int = 200
+        #: janela (s) para coalescer mudanças consecutivas do MESMO
+        #: parâmetro em 1 entrada (arrastar um slider gera 1 undo, não 200)
+        self.coalesce_window: float = 0.5
+        self._last_param_push: float = 0.0
 
         self.params.on_change(self._on_params_changed)
         self.params.on_mutate(self._on_param_mutate)
@@ -274,16 +280,32 @@ class Document:
         self._invalidate_mesh()
 
     # ------------------------------------------------------------ undo/redo
+    def _push(self, cmd: _Command) -> None:
+        self._undo_stack.append(cmd)
+        if len(self._undo_stack) > self.undo_limit:
+            del self._undo_stack[: len(self._undo_stack) - self.undo_limit]
+        self._redo_stack.clear()
+
     def _apply(self, cmd: _Command) -> None:
         cmd.do(self)
         if not self._replaying:
-            self._undo_stack.append(cmd)
-            self._redo_stack.clear()
+            self._push(cmd)
 
     def _on_param_mutate(self, name: str, old, new) -> None:
-        if not self._replaying:
-            self._undo_stack.append(_SetParam(name, old, new))
+        if self._replaying:
+            return
+        now = time.monotonic()
+        top = self._undo_stack[-1] if self._undo_stack else None
+        # coalescência: mudanças consecutivas do mesmo parâmetro dentro da
+        # janela viram uma única entrada (mantém o `old` original)
+        if (isinstance(top, _SetParam) and top.name == name
+                and now - self._last_param_push <= self.coalesce_window):
+            top.new = new
+            top.label = f"parâmetro {name} = {new!r}"
             self._redo_stack.clear()
+        else:
+            self._push(_SetParam(name, old, new))
+        self._last_param_push = now
 
     def undo(self) -> bool:
         """Desfaz a última mutação (parâmetro ou edição de histórico)."""

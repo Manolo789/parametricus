@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "parametricus"
+version = "1.1.0"
+description = "CAD paramétrico 3D em Python por geometria implícita (SDF)"
+requires-python = ">=3.9"
+dependencies = ["numpy", "scikit-image"]
+
+[project.optional-dependencies]
+viewer = ["PySide6"]
+fast = ["scipy"]        # acelera MeshSDF (kNN) — opcional
+dev = ["pytest", "mypy"]
+
+[tool.setuptools.packages.find]
+include = ["parametricus*"]
+
+# ------------------------------------------------- mypy (Fase 1.1, gradual)
+[tool.mypy]
+python_version = "3.9"
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+check_untyped_defs = true
+# adoção gradual: módulos numéricos primeiro, viewers depois
+[[tool.mypy.overrides]]
+module = ["skimage.*", "PySide6.*", "scipy.*", "trimesh.*",
+          "pyvista.*", "matplotlib.*", "OpenGL.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "parametricus.viewer_backend.*"
+ignore_errors = true          # área mais defasada; tipar incrementalmente

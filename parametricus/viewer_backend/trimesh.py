@@ -10,6 +10,7 @@ import numpy as np
 import trimesh
 
 from ..mesher import Mesh
+from .._log import logger
 
 # Install trimesh:
 # pip install trimesh[easy]
@@ -38,7 +39,7 @@ def show_trimesh(mesh: Mesh, title: str = "parametricus", color: str = "#4a90d9"
         with open(save_path, "wb") as f:
             f.write(png)
 
-        print(f"Imagem salva em: {save_path}")
+        logger.info("Imagem salva em: %s", save_path)
 
     if show:
         scene.show()

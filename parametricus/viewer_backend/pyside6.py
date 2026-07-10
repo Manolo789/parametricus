@@ -16,6 +16,7 @@ from ..mesher import Mesh
 from .engine_pyside6.window import MainWindow
 from .engine_pyside6.viewer import configure_default_surface_format
 from .engine_pyside6.utils import hex_to_rgb
+from .._log import logger
 
 # Install PySide6:
 # pip install numpy PySide6 PyOpenGL
@@ -108,6 +109,6 @@ def show_pyside6(mesh: Mesh, title: str = "parametricus",
         # antes de capturar o conteúdo.
         viewer.save_image(save_path)
 
-        print(f"Imagem salva em: {save_path}")
+        logger.info("Imagem salva em: %s", save_path)
 
     window.close()

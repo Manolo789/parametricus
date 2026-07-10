@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import numpy as np
 from ..mesher import Mesh
+from .._log import logger
 
 # Install Matplotlib:
 # pip install matplotlib
@@ -58,7 +59,7 @@ def show_mpl(mesh: Mesh, title: str = "parametricus", color: str = "#4a90d9",
 
     if save_path:
         plt.savefig(save_path, dpi=140)
-        print(f"Imagem salva em: {save_path}")
+        logger.info("Imagem salva em: %s", save_path)
     if show:
         plt.show()
     else:

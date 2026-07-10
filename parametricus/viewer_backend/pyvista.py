@@ -9,6 +9,7 @@ from __future__ import annotations
 import numpy as np
 import pyvista as pv
 from ..mesher import Mesh
+from .._log import logger
 
 # Install PyVista:
 # pip install 'pyvista[all]'
@@ -49,7 +50,7 @@ def show_pyvista(mesh: Mesh, title: str = "parametricus", color: str = "#4a90d9"
 
     if save_path:
         plotter.screenshot(save_path)
-        print(f"Imagem salva em: {save_path}")
+        logger.info("Imagem salva em: %s", save_path)
 
     if show:
         plotter.show()
