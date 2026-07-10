@@ -19,10 +19,12 @@ Exemplo:
 from __future__ import annotations
 
 import ast
+import contextlib
+import inspect
 import math
 import re
 from dataclasses import dataclass, field
-from typing import Callable, Dict, Iterable, List, Optional, Set, Union
+from typing import Callable, Dict, Iterable, Iterator, List, Optional, Set, Union
 
 Number = Union[int, float]
 
@@ -144,9 +146,17 @@ class ParameterSet:
     dependentes são recalculados em ordem topológica.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._params: Dict[str, Parameter] = {}
-        self._listeners: List[Callable[[], None]] = []
+        self._listeners: List[Callable] = []
+        # Fase 1.3 — rastreamento de leitura: enquanto um contexto tracking()
+        # está ativo, cada __getitem__ registra o nome lido. É assim que o
+        # Document descobre quais parâmetros cada feature consome, sem mudar
+        # a API de lambdas (`lambda: P["x"]`).
+        self._tracking_stack: List[Set[str]] = []
+        # Fase 2.2 — hook de mutação (nome, expr_antiga, expr_nova), usado
+        # pelo Document para registrar comandos de Undo/Redo.
+        self._mutate_hooks: List[Callable[[str, Union[str, Number], Union[str, Number]], None]] = []
 
     # ------------------------------------------------------------------ API
     def define(self, name: str, expression: Union[str, Number],
@@ -159,7 +169,7 @@ class ParameterSet:
                       description=description)
         p.depends_on = self._extract_deps(expression)
         self._params[name] = p
-        self._recompute()
+        self._recompute(changed_root=name)
         return p
 
     def set(self, name: str, expression: Union[str, Number]) -> None:
@@ -167,13 +177,28 @@ class ParameterSet:
         if name not in self._params:
             raise ParameterError(f"Parâmetro inexistente: {name!r}")
         p = self._params[name]
+        old_expression = p.expression
+        if expression == old_expression:
+            return  # nada mudou — evita rebuilds/invalidações desnecessários
         p.expression = expression
         p.depends_on = self._extract_deps(expression)
-        self._recompute()
+        try:
+            self._recompute(changed_root=name)
+        except ParameterError:
+            # reverte para manter o conjunto consistente
+            p.expression = old_expression
+            p.depends_on = self._extract_deps(old_expression)
+            self._recompute()
+            raise
+        for hook in self._mutate_hooks:
+            hook(name, old_expression, expression)
 
     def __getitem__(self, name: str) -> float:
         if name not in self._params:
             raise ParameterError(f"Parâmetro inexistente: {name!r}")
+        if self._tracking_stack:
+            for reads in self._tracking_stack:
+                reads.add(name)
         return self._params[name].value
 
     def __contains__(self, name: str) -> bool:
@@ -185,9 +210,58 @@ class ParameterSet:
     def as_dict(self) -> Dict[str, float]:
         return {n: p.value for n, p in self._params.items()}
 
-    def on_change(self, callback: Callable[[], None]) -> None:
-        """Registra callback chamado sempre que os valores mudam."""
+    def on_change(self, callback: Callable) -> None:
+        """
+        Registra callback chamado sempre que os valores mudam.
+
+        O callback pode ter duas assinaturas:
+        - ``cb()`` — compatibilidade com versões anteriores;
+        - ``cb(changed: set[str])`` — recebe o conjunto de nomes cujos
+          valores efetivamente mudaram (Fase 1.3), permitindo invalidação
+          seletiva no Document.
+        """
         self._listeners.append(callback)
+
+    def on_mutate(self, hook: Callable[[str, Union[str, Number], Union[str, Number]], None]) -> None:
+        """Registra hook ``(nome, expr_antiga, expr_nova)`` para cada
+        ``set()`` bem-sucedido — base do Undo/Redo do Document."""
+        self._mutate_hooks.append(hook)
+
+    @contextlib.contextmanager
+    def tracking(self) -> Iterator[Set[str]]:
+        """
+        Context manager que registra os parâmetros lidos no bloco.
+
+            with P.tracking() as reads:
+                solid = feature.build(P)
+            # reads == {"L", "esp", ...}
+
+        Suporta aninhamento (cada contexto recebe seu próprio conjunto).
+        """
+        reads: Set[str] = set()
+        self._tracking_stack.append(reads)
+        try:
+            yield reads
+        finally:
+            self._tracking_stack.pop()
+
+    def dependents_of(self, name: str) -> Set[str]:
+        """Fecho transitivo dos parâmetros que dependem de ``name``
+        (inclui o próprio ``name``)."""
+        reverse: Dict[str, Set[str]] = {n: set() for n in self._params}
+        for n, p in self._params.items():
+            for dep in p.depends_on:
+                if dep in reverse:
+                    reverse[dep].add(n)
+        result: Set[str] = set()
+        stack = [name]
+        while stack:
+            n = stack.pop()
+            if n in result:
+                continue
+            result.add(n)
+            stack.extend(reverse.get(n, ()))
+        return result
 
     def table(self) -> str:
         """Tabela formatada (útil para CLI)."""
@@ -237,7 +311,8 @@ class ParameterSet:
             visit(name, [])
         return order
 
-    def _recompute(self) -> None:
+    def _recompute(self, changed_root: Optional[str] = None) -> None:
+        old_values = {n: p.value for n, p in self._params.items()}
         values: Dict[str, float] = {}
         for name in self._topo_order():
             p = self._params[name]
@@ -246,5 +321,21 @@ class ParameterSet:
             else:
                 p.value = float(p.expression)
             values[name] = p.value
+        # conjunto de parâmetros cujo VALOR mudou; inclui a raiz da mudança
+        # mesmo que o valor final coincida (a expressão pode ter mudado).
+        changed: Set[str] = {
+            n for n, v in values.items()
+            if old_values.get(n) is None or v != old_values[n]
+        }
+        if changed_root is not None:
+            changed.add(changed_root)
         for cb in self._listeners:
-            cb()
+            try:
+                sig = inspect.signature(cb)
+                takes_arg = len(sig.parameters) >= 1
+            except (TypeError, ValueError):
+                takes_arg = False
+            if takes_arg:
+                cb(set(changed))
+            else:
+                cb()

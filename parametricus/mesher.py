@@ -33,6 +33,7 @@ from skimage import measure
 
 from . import sdf as _sdf
 from .sdf import SDF
+from ._log import logger
 
 
 # ============================================================== estatísticas
@@ -124,15 +125,90 @@ class Mesh:
             fh.write(data.tobytes())
 
     def save_obj(self, path: str) -> None:
-        """Wavefront OBJ — legível e amplamente suportado."""
+        """Wavefront OBJ — legível e amplamente suportado.
+        Escrita em blocos via ``np.savetxt`` (Fase 3.1 — antes, um f-string
+        por linha; malhas grandes caíam de segundos para frações)."""
         with open(path, "w") as fh:
             fh.write("# gerado por parametricus\n")
-            for v in self.vertices:
-                fh.write(f"v {v[0]:.6f} {v[1]:.6f} {v[2]:.6f}\n")
-            for n in self.normals:
-                fh.write(f"vn {n[0]:.6f} {n[1]:.6f} {n[2]:.6f}\n")
-            for a, b, c in self.faces + 1:
-                fh.write(f"f {a}//{a} {b}//{b} {c}//{c}\n")
+            np.savetxt(fh, self.vertices, fmt="v %.6f %.6f %.6f")
+            np.savetxt(fh, self.normals, fmt="vn %.6f %.6f %.6f")
+            f = self.faces.astype(np.int64) + 1
+            idx = np.column_stack([f[:, 0], f[:, 0], f[:, 1], f[:, 1],
+                                   f[:, 2], f[:, 2]])
+            np.savetxt(fh, idx, fmt="f %d//%d %d//%d %d//%d")
+
+    def save_ply(self, path: str) -> None:
+        """PLY binário (little-endian) com normais por vértice (Fase 4.2)."""
+        header = (
+            "ply\n"
+            "format binary_little_endian 1.0\n"
+            "comment gerado por parametricus\n"
+            f"element vertex {len(self.vertices)}\n"
+            "property float x\nproperty float y\nproperty float z\n"
+            "property float nx\nproperty float ny\nproperty float nz\n"
+            f"element face {len(self.faces)}\n"
+            "property list uchar int vertex_indices\n"
+            "end_header\n"
+        )
+        vdata = np.hstack([self.vertices, self.normals]).astype("<f4")
+        fdata = np.empty(len(self.faces),
+                         dtype=[("n", "u1"), ("idx", "<i4", (3,))])
+        fdata["n"] = 3
+        fdata["idx"] = self.faces
+        with open(path, "wb") as fh:
+            fh.write(header.encode("ascii"))
+            fh.write(vdata.tobytes())
+            fh.write(fdata.tobytes())
+        logger.info("PLY salvo em: %s (%d vértices, %d faces)",
+                    path, len(self.vertices), len(self.faces))
+
+    # ---------------------------------------------- propriedades inerciais
+    def inertia_tensor(self, density: float = 1.0) -> np.ndarray:
+        """
+        Tensor de inércia 3x3 em relação ao CENTROIDE (kg·mm² se a
+        densidade vier em kg/mm³; em geral, [densidade]·mm⁵), calculado
+        por integração exata sobre tetraedros origem-face (mesmo método
+        do volume/centroide, estendido aos momentos de 2ª ordem).
+        Requer malha fechada. Base do sistema de materiais do roadmap.
+        """
+        p0, p1, p2 = self._triangles()
+        det = np.einsum("ij,ij->i", p0, np.cross(p1, p2))   # 6 x vol assinado
+        volume = det.sum() / 6.0
+
+        # integral de x_i * x_j sobre cada tetraedro (0, p0, p1, p2):
+        # detJ/120 * ( sum_k p_k p_k^T + (sum_k p_k)(sum_k p_k)^T )
+        s = p0 + p1 + p2                                    # (F, 3)
+        outer_sum = (np.einsum("fi,fj->fij", p0, p0) +
+                     np.einsum("fi,fj->fij", p1, p1) +
+                     np.einsum("fi,fj->fij", p2, p2))
+        outer_s = np.einsum("fi,fj->fij", s, s)
+        C = np.einsum("f,fij->ij", det, outer_sum + outer_s) / 120.0
+
+        sign = 1.0 if volume >= 0 else -1.0
+        C *= sign
+        volume = abs(volume)
+        mass = density * volume
+        C *= density
+
+        # translada para o centroide: C_c = C - m * c c^T
+        c = self.centroid()
+        C -= mass * np.outer(c, c)
+        # tensor de inércia: I = tr(C) Id - C
+        return np.trace(C) * np.eye(3) - C
+
+    def mass_properties(self, density: float = 1.0) -> dict:
+        """Dicionário com massa, volume, centroide e tensor/momentos
+        principais de inércia para a densidade dada ([massa]/mm³)."""
+        volume = self.volume()
+        inertia = self.inertia_tensor(density)
+        principal = np.linalg.eigvalsh(inertia)
+        return {
+            "volume_mm3": volume,
+            "mass": density * volume,
+            "centroid_mm": self.centroid(),
+            "inertia_tensor": inertia,
+            "principal_moments": principal,
+        }
 
     def report(self) -> str:
         bmin, bmax = self.bounding_box()
@@ -280,6 +356,7 @@ def generate_mesh(solid: SDF, resolution: int = 96, padding: float = 0.05,
                 em mesh.stats).
     """
     mesh = (generator or _DEFAULT_GENERATOR).generate(solid, resolution=resolution, padding=padding)
-    if verbose and mesh.stats is not None:
-        print(mesh.stats.report())
+    if mesh.stats is not None:
+        level = logger.info if verbose else logger.debug
+        level("%s", mesh.stats.report())
     return mesh

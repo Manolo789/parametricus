@@ -14,12 +14,17 @@ Coloque a pasta `parametricus/` no seu projeto (ou adicione ao `PYTHONPATH`).
 
 | Conceito | Módulo | Papel |
 |---|---|---|
-| `ParameterSet` | `parameters.py` | Parâmetros nomeados com **expressões** (`"L/2"`, `"max(a,b)*0.1"`), grafo de dependências, detecção de ciclos e reavaliação em cascata. |
-| `SDF` e subclasses | `sdf.py` | Árvore de construção (CSG): primitivas, booleanas, transformações e operações de engenharia. Dimensões podem ser *lambdas* ligadas aos parâmetros. |
+| `ParameterSet` | `parameters.py` | Parâmetros nomeados com **expressões** (`"L/2"`, `"max(a,b)*0.1"`), grafo de dependências, detecção de ciclos, reavaliação em cascata e **rastreamento de leituras** (base do rebuild seletivo). |
+| `SDF` e subclasses | `sdf.py` | Árvore de construção (CSG): primitivas, booleanas, transformações e operações de engenharia. Dimensões podem ser *lambdas* ligadas aos parâmetros. Cada nó tem uma **assinatura estrutural** usada pelos caches. |
 | `Profile` | `sketch.py` | Esboços 2D (círculo, retângulo, polígono, polígono regular) com booleanas próprias, para `Extrude` e `Revolve`. |
-| `Document` | `document.py` | Documento paramétrico: parâmetros + histórico de features + regeneração + exportação + relatório de propriedades de massa. |
-| `generate_mesh` / `Mesh` | `mesher.py` | Geração de malha por Marching Cubes em blocos (float32, memória limitada), volume/área/centroide, exportação **STL binário** e **OBJ**, estatísticas em `mesh.stats`. Algoritmos alternativos implementam a interface `MeshGenerator`. |
+| `ConstrainedSketch` | `constraints.py` | **Esboço com restrições**: entidades 2D, restrições geométricas/dimensionais e solver de mínimos quadrados (Levenberg-Marquardt). Dimensões aceitam `lambda: P["x"]`. |
+| `Document` | `document.py` | Documento paramétrico: parâmetros + **histórico de features encadeado e editável** (suppress/edit/reorder) + **rebuild seletivo com cache** + **malhagem preguiçosa** + **Undo/Redo** + material + exportação + relatório. |
+| `generate_mesh` / `Mesh` | `mesher.py` | Marching Cubes em blocos (float32), volume/área/centroide, **tensor de inércia**, exportação **STL/OBJ/PLY**, estatísticas em `mesh.stats`. Algoritmos alternativos implementam `MeshGenerator`. |
+| `measure` | `measure.py` | **Medições e inspeção**: distância ponto→sólido (exata via SDF), caixa envolvente, **seção plana** (contornos, área, perímetro) e `slice_field` (heatmap do campo). |
+| `io` | `io.py` | `export_mesh`/`import_mesh` por extensão: exporta `.stl/.obj/.ply`, importa `.stl/.obj`. |
+| `MATERIALS` | `materials.py` | Materiais (Steel, Aluminum, Titanium, ABS, PLA); `doc.material` habilita massa e momentos de inércia no relatório. |
 | `show_mesh` | `viewer.py` | Visualizador 3D multiengine com sombreamento e escala real; salva PNG. |
+| `logger` | `_log.py` | Logging padrão de biblioteca; `enable_console_logging("DEBUG")` mostra cache hits, poda e estatísticas. |
 
 ## Exemplo mínimo
 
@@ -54,11 +59,12 @@ doc.show()               # visualizador 3D interativo
 ## Vocabulário de modelagem
 
 **Primitivas** — `Sphere(r)`, `Box((dx,dy,dz))`, `Cylinder(r,h)`,
-`Cone(r1,r2,h)`, `Torus(R,r)`, `Capsule(a,b,r)`
+`Cone(r1,r2,h)`, `Torus(R,r)`, `Capsule(a,b,r)`, `HalfSpace(normal,offset)`
 
 **Esboço → feature** — `Extrude(perfil, altura)`, `Revolve(perfil)`
 com perfis `CircleProfile`, `RectProfile(w,h,corner_radius)`,
-`PolygonProfile(vertices)`, `RegularPolygonProfile(n, R)`
+`PolygonProfile(vertices)`, `RegularPolygonProfile(n, R)` ou
+`ConstrainedSketch().profile([...])` (esboço resolvido por restrições)
 
 **Booleanas** — operadores Python: `a | b` (união), `a & b` (interseção),
 `a - b` (subtração)
@@ -69,9 +75,74 @@ com perfis `CircleProfile`, `RectProfile(w,h,corner_radius)`,
 **Transformações** — `.translate(v)`, `.rotate(eixo, graus)`, `.scale(f)`,
 `.mirror(normal)`
 
-**Padrões** — `.array_linear(n, passo)`, `.array_polar(n, eixo)`
+**Padrões** — `.array_linear(n, passo)`, `.array_polar(n, eixo)` — ambos
+por repetição de domínio: o filho é avaliado no máximo 3× por ponto,
+independentemente de `n`
 
-**Engenharia** — `.shell(espessura)` (casca oca)
+**Engenharia** — `.shell(espessura)` (casca oca), `.cut(normal, offset)`
+(vista em corte)
+
+**Medições** — `distance_point(solido, p)`, `bounding_box(solido | malha)`,
+`section(solido, origem, normal)` (área/perímetro/contornos),
+`slice_field(...)` (campo 2D para heatmap), `angle(v1, v2)`
+
+## Histórico encadeado, cache e Undo/Redo
+
+```python
+doc.add_feature("Base", lambda P: Box((lambda: P["L"], 40, 10)))
+doc.add_feature("Furo", lambda P, prev: prev - Cylinder(lambda: P["d"]/2, 99))
+doc.rebuild()             # corpo = resultado da última feature
+
+P.set("d", 12)            # só "Furo" regenera; "Base" sai do cache
+doc.rebuild()
+
+doc.suppress("Furo")      # suprime sem remover (como em CADs comerciais)
+doc.edit_feature("Furo", nova_fn)
+doc.reorder_feature("Furo", 0)
+doc.undo(); doc.redo()    # parâmetros e edições de histórico
+```
+
+- `build(P)` → feature independente (compatível com a versão anterior);
+  `build(P, prev)` → feature **encadeada** (recebe o sólido acumulado).
+- `set_body(...)` continua funcionando e tem precedência (compatibilidade).
+- A malha é **preguiçosa** (`get_mesh(resolution)`) e fica em cache por
+  `(resolução, assinatura)` — reconstruir sem mudanças geométricas, ou
+  voltar um parâmetro ao valor anterior, reaproveita a malha.
+- Feature com erro não derruba o rebuild: fica marcada `!` no relatório e
+  o encadeamento segue com o sólido anterior.
+
+## Esboço com restrições
+
+```python
+sk = ConstrainedSketch()
+a, b = sk.point(0, 0), sk.point(30, 1)
+c, d = sk.point(31, 11), sk.point(-1, 12)
+ab, bc, cd, da = sk.line(a,b), sk.line(b,c), sk.line(c,d), sk.line(d,a)
+sk.fix(a); sk.horizontal(ab); sk.perpendicular(ab, bc)
+sk.parallel(ab, cd); sk.parallel(bc, da)
+sk.length(ab, lambda: P["W"]); sk.length(bc, lambda: P["H"])
+print(sk.dof_report())            # "... -> totalmente restrito"
+
+corpo = Extrude(sk.profile([a, b, c, d]), 10)   # re-resolve a cada rebuild
+```
+
+Restrições: `fix`, `coincident`, `horizontal`, `vertical`, `parallel`,
+`perpendicular`, `tangent`, `symmetric` e as dimensionais `distance`,
+`length`, `angle`, `radius` (aceitam `lambda: P["x"]`). O solver é
+Levenberg-Marquardt em NumPy puro; `dof()`/`dof_report()` diagnosticam
+sub/sobre-restrição via posto do Jacobiano.
+
+## Materiais e propriedades de massa
+
+```python
+from parametricus import MATERIALS
+doc.material = MATERIALS["Aluminum"]     # Steel, Titanium, ABS, PLA...
+props = doc.mass_properties()            # massa (g), inércia (g·mm²)
+print(doc.report())                      # inclui a seção MATERIAL
+```
+
+O tensor de inércia é integrado exatamente sobre a malha fechada
+(tetraedros origem-face), no referencial do centroide.
 
 ## Engines de visualização
 
@@ -94,6 +165,7 @@ engine selecionada precisam estar instaladas.
 | `examples/exemplo_flange.py` | Flange industrial dirigida por 2 parâmetros mestres; furos em padrão polar; filete estrutural; regeneração DN80 → DN120. |
 | `examples/exemplo_caneca.py` | Esboço → revolução; raio **calculado a partir do volume desejado** (350 → 500 ml); alça toroidal com união suave. |
 | `examples/exemplo_porca.py` | Extrusão de hexágono − círculo; chanfros por interseção com cones; escala M10 → M16 com um parâmetro. |
+| `examples/exemplo_placa_v11.py` | **Tour pela v1.1**: histórico encadeado, rebuild seletivo, undo/redo, esboço com restrições, medições/seção, materiais e I/O `.stl/.obj/.ply`. |
 
 Execute-os com `python examples/exemplo_<nome>.py`; cada um imprime o
 relatório paramétrico, exporta STL e salva uma imagem PNG do modelo.
@@ -129,11 +201,18 @@ polinomiais e cascas viram `|f| − t/2`. O custo é a discretização final
 
 ## Limitações conhecidas
 
-- A saída é malha triangular (STL/OBJ), não B-Rep (STEP/IGES).
+- A saída é malha triangular (STL/OBJ/PLY), não B-Rep. STEP/IGES ficam
+  para a Fase 4.1 do roadmap (exigem OCCT como dependência opcional);
+  a importação atual (`.stl`/`.obj`) devolve `Mesh` para medição e
+  reexportação — booleanas com malhas importadas (`MeshSDF`) também são
+  item futuro do roadmap.
 - Arestas vivas são levemente suavizadas pela resolução da grade —
   aumente `resolution` para peças pequenas com detalhes finos.
 - `SmoothUnion`/`Scale` não uniformes podem distorcer o campo de
-  distância; o mesher tolera, mas filetes extremos merecem inspeção.
+  distância; o mesher tolera, mas filetes extremos merecem inspeção
+  (dica: `slice_field` mostra o campo num plano).
+- O Undo/Redo cobre parâmetros e edições de histórico; não coalesce
+  mudanças contínuas (ex.: slider de GUI) — previsto junto com a GUI.
 
 ## Contribuidores
 
