@@ -213,3 +213,9 @@ polinomiais e cascas viram `|f| − t/2`. O custo é a discretização final
   (dica: `slice_field` mostra o campo num plano).
 - O Undo/Redo cobre parâmetros e edições de histórico; não coalesce
   mudanças contínuas (ex.: slider de GUI) — previsto junto com a GUI.
+
+## Contribuidores
+
+<a href="https://github.com/Manolo789/parametricus/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=Manolo789/parametricus" />
+</a>
