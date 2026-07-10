@@ -134,3 +134,9 @@ polinomiais e cascas viram `|f| − t/2`. O custo é a discretização final
   aumente `resolution` para peças pequenas com detalhes finos.
 - `SmoothUnion`/`Scale` não uniformes podem distorcer o campo de
   distância; o mesher tolera, mas filetes extremos merecem inspeção.
+
+## Contribuidores
+
+<a href="https://github.com/Manolo789/parametricus/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=Manolo789/parametricus" />
+</a>
