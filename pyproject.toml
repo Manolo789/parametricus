@@ -15,7 +15,7 @@ fast = ["scipy"]        # acelera MeshSDF (kNN) — opcional
 dev = ["pytest", "mypy"]
 
 [tool.setuptools.packages.find]
-include = ["parametricus*"]
+include = ["parametricus*", "nucleok*"]
 
 # ------------------------------------------------- mypy (Fase 1.1, gradual)
 [tool.mypy]

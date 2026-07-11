@@ -1,5 +1,45 @@
 CHANGELOG
 
+[2026/07/11] — núcleo-K 0.1.0 (kernel B-Rep próprio, sem OCCT):
+
+Novo pacote independente `nucleok/` (única dependência: NumPy; zero imports
+do parametricus — verificado em teste). Kernel de geometria computacional
+em 6 camadas:
+-Camada 1 (core): tolerâncias centralizadas; Transform 4x4 (translação,
+ Rodrigues, escala, espelho Householder, normais por inversa-transposta);
+ predicados robustos orient2d/orient3d com filtro float64 e fallback EXATO
+ em fractions.Fraction.
+-Camada 2 (geom): Line/Circle/Ellipse/Polyline com comprimento por
+ Gauss-Legendre; NURBS completas (Piegl & Tiller A2.1/A2.2/A2.3/A5.1,
+ racionais; círculo exato de 9 pontos com desvio ~1e-16); superfícies
+ Plane/Cylindrical/Conical/Spherical/Toroidal/Revolution com inversão
+ paramétrica (parameters_of) e subdivisões por deflexão de corda.
+-Camada 3 (topo): Vertex/Edge/Loop/Face/Shell/Solid com separação rigorosa
+ geometria×topologia (aresta = recorte de curva ilimitada; face = recorte
+ de superfície + same_sense; arestas compartilhadas entre faces).
+-Camada 4 (algo): interseções (reta/plano/esfera/cilindro em forma
+ fechada; curva×plano por bisseção+Newton; Möller-Trumbore); classificação
+ ponto×sólido por paridade de raio; ear clipping com furos (pontes de
+ Eberly, decisões por predicado exato); tesselação por grade paramétrica
+ (patches) e recorte planar; operadores de Euler mvfs/mev/mef em half-edge
+ (tetraedro V4/E6/F4 χ=2 no teste, volume exato 1/6); validação
+ Euler-Poincaré + fechamento 2-manifold; volume/área/centroide por
+ divergência.
+-Camada 5 (model): make_box/make_cylinder/make_sphere/make_torus com
+ topologias canônicas validadas (χ=2/2/2/0); extrude com furos (prisma
+ com furo passante: χ=0, volume exato); revolve por RevolutionSurface
+ (validado com Pappus); booleanas com API estabilizada e plano de
+ implementação documentado (próximo marco).
+-Camada 6 (io): STEP AP214 — escritor E leitor próprios
+ (MANIFOLD_SOLID_BREP; PLANE/CYL/CONE/SPHERE/TORUS/SURFACE_OF_REVOLUTION;
+ LINE/CIRCLE/B_SPLINE_CURVE_WITH_KNOTS; round-trip com topologia idêntica
+ e Δvolume = 0 em caixa/cilindro/esfera/toro/revolução/extrusão-com-furo);
+ STL binário/ASCII (escrita+leitura); IGES 5.3 wireframe (110/100/106).
+-Suíte tests/test_nucleok.py: 53 asserções (todas passando) + as 71 da
+ suíte v1.1.1 continuam verdes. Roadmap atualizado: rota STEP/IGES sai de
+ "OCCT opcional" para "núcleo-K próprio".
+
+
 [2026/07/10] — v1.1.1 (auditoria dos checkboxes do roadmap + itens pendentes):
 
 Auditoria: os itens marcados [X] foram verificados contra o código e a suíte

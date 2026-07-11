@@ -5,7 +5,7 @@
 > arruela, parafuso, rosca helicoidal); `distance_solids` (distância mínima
 > entre sólidos); coalescência e limite do Undo; config do `mypy`.
 > ⏳ Pendente (exige dependências opcionais pesadas/ambiente gráfico):
-> STEP/IGES (OCCT), GUI completa, rebuild assíncrono, clipping no shader do
+> STEP/IGES (agora via núcleo-K, sem OCCT), GUI completa, rebuild assíncrono, clipping no shader do
 > viewport PySide6, type hints completos do `viewer_backend`, entidade `Arc`
 > nos sketch constraints, cache de campo escalar por nó SDF.
 > Detalhes em CHANGELOG.md; validação em tests/test_roadmap.py (71 asserções).
@@ -175,7 +175,7 @@ Três recursos distintos com implementações que se apoiam no que já existe:
 ### 4.1 Importação: STL, OBJ, STEP
 
 - [X] **STL/OBJ (fácil):** *(v1.1.1: nó `MeshSDF` implementado sem dependências — distância exata ponto→triângulo pré-amostrada em grade + interpolação trilinear; sinal por paridade de raios; kNN via SciPy quando disponível)* parsers próprios (STL binário é o espelho do `save_stl` existente) ou `trimesh`, que já é backend opcional de visualização. Malha importada entra como novo nó `MeshSDF` — SDF por distância à malha (consulta por BVH; `trimesh.proximity` fornece pronto). Isso permite **booleanas entre peças importadas e geometria paramétrica**, um diferencial real da arquitetura SDF.
-- [ ] **STEP (difícil):** exige kernel B-rep — usar `pythonocc-core`/OCCT como dependência opcional (`pip install parametricus[step]`). Importar → tesselar via OCCT → `MeshSDF`.
+- [~] **STEP:** rota mudou — em vez de OCCT, o repositório agora contém o **núcleo-K** (`nucleok/`), kernel B-Rep próprio (só NumPy). Leitor STEP próprio já cobre o subconjunto analítico manifold (PLANE/CYL/CONE/SPHERE/TORUS/REVOLUTION + LINE/CIRCLE/B-SPLINE); importar → `nucleok.tessellate` → `MeshSDF`. Falta: faces trimadas genéricas e assemblies.
 
 ### 4.2 Exportação: STEP, IGES, PLY, GLTF, 3MF
 
@@ -184,7 +184,7 @@ Em ordem de custo/benefício:
 - [X] 1. **PLY** — formato trivial, mesmo padrão do `save_stl`/`save_obj` atuais; ~50 linhas.
 - [X] 2. **GLTF/GLB** *(v1.1.1: escrita direta do GLB, sem dependências — `save_glb`/`doc.export("peca.glb")`)* — via `trimesh.export` (opcional) ou escrita direta do GLB (binário simples); útil para web/preview.
 - [X] 3. **3MF** *(v1.1.1: ZIP + XML próprios — `save_3mf`/`doc.export("peca.3mf")`)* — ZIP + XML; escrita própria viável, relevante para impressão 3D.
-- [ ] 4. **STEP/IGES** — o mais difícil: SDF→malha→B-rep é conversão com perda (superfícies viram facetas). Caminho realista: exportar a malha tesselada embrulhada em STEP via OCCT, documentando a limitação; reconstrução de superfícies analíticas fica fora de escopo.
+- [~] 4. **STEP/IGES** — rota sem OCCT: o **núcleo-K** escreve STEP AP214 (MANIFOLD_SOLID_BREP) e IGES wireframe com código próprio. Sólidos construídos no núcleo-K (primitivas/extrusão/revolução) exportam com geometria analítica EXATA e round-trip validado; para SDFs do parametricus a exportação continua sendo malha (conversão com perda documentada) até existir reconstrução de superfícies.
 
 Estruturar tudo em `parametricus/io/` com registro por extensão (`doc.export("peca.step")` despacha pelo sufixo).
 
@@ -209,5 +209,5 @@ Estruturar tudo em `parametricus/io/` com registro por extensão (`doc.export("p
 5. **Vetorização (PolygonProfile primeiro)** — hot loop mais visível nos exemplos atuais.
 6. **Medições + Slice/Section + viewport** — valor de inspeção com baixo risco.
 7. **Sketch constraints** — subprojeto em paralelo a partir do passo 4 (entidades → solver → integração com `ParameterSet`).
-8. **I/O** — PLY/GLTF/STL-import cedo se houver demanda; STEP/IGES por último, atrás de flag opcional OCCT.
+8. **I/O** — PLY/GLTF/STL-import cedo se houver demanda; STEP/IGES via **núcleo-K** (kernel próprio, sem OCCT) — ver `nucleok/README.md`.
 9. **Materiais** (antecipável), **biblioteca de componentes** e **GUI** fecham o ciclo.
