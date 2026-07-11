@@ -169,6 +169,34 @@ def test_camada4_algoritmos():
     check(abs(abs(signed_volume(tetra)) - 1 / 6) < 1e-9,
           "volume do tetraedro = 1/6 exato")
 
+    # -------- v0.2: tesselação de recortes em superfícies curvas
+    from nucleok import CylindricalSurface, tessellate_trimmed
+    cylsurf = CylindricalSurface((0, 0, 0), (0, 0, 1), 3.0)
+    tt = tessellate_trimmed(
+        cylsurf, [[(1, 0), (2, 2), (1, 4), (0, 2)]], deflection=0.002)
+    pa = tt.vertices[tt.triangles[:, 0]]
+    pb = tt.vertices[tt.triangles[:, 1]]
+    pc = tt.vertices[tt.triangles[:, 2]]
+    area = float(np.linalg.norm(np.cross(pb - pa, pc - pa),
+                                axis=1).sum() / 2)
+    check(abs(area - 12.0) / 12.0 < 5e-3,
+          "recorte losango no cilindro: área = r·A_uv (< 0.5%)")
+
+    # -------- v0.2: BVH concorda com força bruta
+    from nucleok.algo.bvh import BVH
+    sph = make_sphere(2)
+    tsp = __import__("nucleok").tessellate(sph, 0.01)
+    check(len(tsp.triangles) >= 64
+          and classify_point(tsp, (1.5, 0.5, 0.5)) is Location.INSIDE
+          and classify_point(tsp, (3, 0, 0)) is Location.OUTSIDE,
+          "classificação via BVH (malha grande) correta")
+    bvh = BVH(tsp.vertices, tsp.triangles)
+    d_irr = np.array([0.5773502691896258, 0.2113248654051871,
+                      0.7886751345948129])
+    hits = bvh.ray_hits((0, 0, 0), d_irr / np.linalg.norm(d_irr))
+    check(len(hits) % 2 == 1,
+          "BVH: raio do centro cruza número ímpar de vezes (paridade)")
+
 
 def test_camada5_modelagem():
     print("[5] modelagem sólida")
@@ -208,12 +236,94 @@ def test_camada5_modelagem():
     check(abs(signed_volume(tri, 0.005) - ref) / ref < 0.005,
           "revolução triangular confere com Pappus")
 
-    from nucleok.model.boolean import BooleanNotReady, fuse
-    try:
-        fuse(box, cyl)
-        check(False, "fuse deveria sinalizar BooleanNotReady")
-    except BooleanNotReady:
-        check(True, "booleanas: API sinaliza marco pendente")
+    # -------- v0.2: revolução parcial e perfis tocando o eixo
+    cone = revolve([(0, 0), (3, 0), (0, 4)])
+    rep = validate(cone)
+    ref = np.pi * 9 * 4 / 3
+    check(rep.ok and rep.euler_characteristic == 2
+          and abs(signed_volume(cone, 0.003) - ref) / ref < 0.005,
+          "cone (perfil no eixo): χ=2 e volume πR²H/3")
+    q = revolve([(0, 0), (3, 0), (0, 4)], angle=np.pi / 2)
+    check(validate(q).ok
+          and abs(signed_volume(q, 0.003) - ref / 4) / (ref / 4) < 0.005,
+          "quarto de cone (revolução parcial com tampas)")
+    meia = revolve([(3, 0), (5, 0), (5, 2), (3, 2)], angle=np.pi)
+    ref = np.pi * 16 * 2 / 2
+    check(validate(meia).ok and validate(meia).euler_characteristic == 2
+          and abs(signed_volume(meia, 0.005) - ref) / ref < 0.005,
+          "meio-tubo (ângulo π): χ=2, metade do volume")
+
+    # -------- v0.2: loft e sweep
+    from nucleok import loft, sweep_path
+    f = loft([[(0, 0, 0), (4, 0, 0), (4, 4, 0), (0, 4, 0)],
+              [(1, 1, 3), (3, 1, 3), (3, 3, 3), (1, 3, 3)]])
+    check(validate(f).ok and abs(signed_volume(f) - 28.0) < 1e-9,
+          "loft: tronco de pirâmide com volume exato (28)")
+    sq = [(-0.5, -0.5), (0.5, -0.5), (0.5, 0.5), (-0.5, 0.5)]
+    swz = sweep_path(sq, [(0, 0, 0), (0, 0, 3), (3, 0, 3), (3, 0, 6)])
+    check(validate(swz).ok and abs(signed_volume(swz) - 9.0) < 1e-9,
+          "sweep em Z com esquadria: volume exato A·ΣL (9)")
+
+    # -------- v0.2: transformação profunda
+    from nucleok import Transform
+    M = Transform.mirror((1, 0.3, 0), point=(4, 0, 0))
+    S = Transform.scaling(2.0, center=(1, 1, 1))
+    tor = make_torus(5, 1.5)
+    v0 = signed_volume(tor, 0.01)
+    tm = tor.transformed(M)
+    check(validate(tm).ok
+          and abs(signed_volume(tm, 0.01) - v0) < 1e-9 * max(1, v0),
+          "espelho profundo do toro: válido e volume preservado")
+    ts = tor.transformed(S)
+    check(abs(signed_volume(ts, 0.02) - 8 * v0) / (8 * v0) < 1e-9,
+          "escala profunda 2x: volume exatamente 8x (deflexão escalada)")
+
+    # -------- v0.2: booleanas fuse/common/cut
+    from nucleok import common, cut, fuse
+    a = make_box(2, 2, 2)
+    b = make_box(2, 2, 2, origin=(1, 0, 0))
+    for op, exp, nome in ((fuse, 12.0, "fuse"), (common, 4.0, "common"),
+                          (cut, 4.0, "cut")):
+        r = op(a, b)
+        rep = validate(r)
+        check(rep.ok and rep.euler_characteristic == 2
+              and abs(signed_volume(r) - exp) < 1e-9,
+              f"booleana {nome} de caixas: B-Rep válido e volume exato "
+              f"({exp:g})")
+    furada = cut(make_box(6, 6, 4),
+                 make_cylinder(1.5, 8, origin=(3, 3, -2)),
+                 deflection=0.01)
+    ref = 144 - np.pi * 2.25 * 4
+    check(validate(furada).ok
+          and abs(signed_volume(furada) - ref) / ref < 0.01,
+          "caixa − cilindro: válido, volume < 1% do exato")
+    lente = common(make_sphere(2), make_sphere(2, center=(2, 0, 0)),
+                   deflection=0.01)
+    ref = np.pi * 10 * 4 / 12
+    check(validate(lente).ok
+          and abs(signed_volume(lente) - ref) / ref < 0.04,
+          "esfera ∩ esfera: lente com volume < 4% (borda facetada)")
+
+    # -------- v0.2: chanfro e filete
+    from nucleok import chamfer_edge, fillet_edge
+    box3 = make_box(3, 3, 3)
+    alvo = None
+    for f_ in box3.faces:
+        for lp in f_.loops:
+            for e, _ in lp.edges:
+                pts = sorted([tuple(np.round(e.start.point, 9)),
+                              tuple(np.round(e.end.point, 9))])
+                if pts == sorted([(0., 0., 0.), (0., 0., 3.)]):
+                    alvo = e
+    ch = chamfer_edge(box3, alvo, 0.8)
+    check(validate(ch).ok
+          and abs(signed_volume(ch) - (27 - 0.32 * 3)) < 1e-9,
+          "chanfro em aresta reta: volume exato a³ − (d²/2)L")
+    fi = fillet_edge(box3, alvo, 0.8, deflection=0.005)
+    ref = 27 - (0.64 - np.pi * 0.64 / 4) * 3
+    check(validate(fi).ok
+          and abs(signed_volume(fi) - ref) / ref < 0.002,
+          "filete em aresta reta: válido, volume < 0.2% do exato")
 
 
 def test_camada6_interoperabilidade():
@@ -258,6 +368,32 @@ def test_camada6_interoperabilidade():
     lines = open(p3).read().splitlines()
     check(all(len(ln) == 80 for ln in lines)
           and lines[-1][72] == "T", "IGES: 80 colunas e terminador")
+
+    # -------- v0.2: leitor IGES (round-trip wireframe)
+    from nucleok import read_iges
+    curves = read_iges(p3)
+    from nucleok import Circle as _C
+    circles = [c for c, _, _ in curves if isinstance(c, _C)]
+    check(len(curves) == 3 and len(circles) == 2
+          and all(abs(c.radius - 3) < 1e-9 for c in circles),
+          "read_iges(cilindro): 1 costura + 2 círculos r=3")
+    p4 = os.path.join(tmp, "b.iges")
+    write_iges(make_box(2, 3, 4), p4)
+    curves = read_iges(p4)
+    lens_ = sorted({round(t1 - t0, 9) for _, t0, t1 in curves})
+    check(len(curves) == 12 and lens_ == [2.0, 3.0, 4.0],
+          "read_iges(caixa): 12 arestas, comprimentos 2/3/4 exatos")
+
+    # -------- v0.2: resultado de booleana exporta para STEP
+    from nucleok import cut as _cut
+    furada = _cut(make_box(4, 4, 2),
+                  make_cylinder(1.0, 4, origin=(2, 2, -1)),
+                  deflection=0.02)
+    p5 = os.path.join(tmp, "furada.step")
+    write_step(furada, p5)
+    back = read_step(p5)[0]
+    check(abs(signed_volume(back, 0.01) - signed_volume(furada, 0.01))
+          < 1e-6, "STEP round-trip de sólido booleano (facetado)")
 
 
 def test_independencia():

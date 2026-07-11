@@ -1,5 +1,60 @@
 CHANGELOG
 
+[2026/07/11] — núcleo-K 0.2.0 (kernel completo: booleanas, features, loft/sweep):
+
+Os oito itens pendentes do 0.1 foram implementados e testados (suíte
+tests/test_nucleok.py: 53 -> 72 asserções, todas passando; as 71 do
+parametricus continuam verdes):
+-Tesselação de faces RECORTADAS em superfícies curvas: loops levados ao
+ (u,v) por inversão paramétrica com desdobra de costura periódica, ear
+ clipping no domínio e refino por bisseção de arestas compartilhadas
+ (malha sem rachaduras); áreas < 0,5% do analítico. Amostragem
+ harmonizada entre faces vizinhas (círculos pela mesma fórmula da grade;
+ nu unificado por eixo/domínio angular) -> malhas de sólidos ESTANQUES
+ (0 arestas abertas em caixa/cilindro/esfera/toro/tubo/cone/setores/
+ extrusão com furo).
+-Transformação PROFUNDA de sólidos (model/ops.transform_solid, ligada a
+ Solid.transformed): clonagem geometria+topologia com mapas de entidades;
+ rígida, escala uniforme (volume exatamente s³, Δ ~1e-11) e espelho
+ (inverte same_sense; volume preservado); rect_domain e parâmetros de
+ aresta remapeados por tipo de curva/superfície.
+-Booleanas fuse/common/cut IMPLEMENTADAS (model/boolean.py): CSG por
+ árvores BSP iterativas sobre as tesselações + reconstrução B-Rep por
+ model/ops.solid_from_tessellation (union-find de triângulos coplanares
+ conexos, loops de fronteira com furos, cicatrização de T-vértices e
+ solda por aglomeração espacial para slivers de tangência). Caixas:
+ volumes EXATOS e χ=2; caixa−cilindro < 1%; lente esferas < 4% (borda
+ facetada); resultados exportam para STEP com round-trip. Limitação
+ documentada: resultado facetado; booleanas analíticas seguem no roadmap
+ (plano em _ANALYTIC_PLAN).
+-Chanfros e filetes (model/features.py): chamfer_edge/fillet_edge para
+ arestas retas entre faces planas, por cortadores posicionados com
+ Transform.from_frame + transform_solid e aplicados via cut; chanfro com
+ volume EXATO a³−(d²/2)L; filete < 0,2% do analítico (cilindro tangente
+ facetado); ângulos diedros convexos genéricos.
+-Loft e sweep genérico (model/sweep.py): loft entre anéis com
+ correspondência (quads planos = 1 face; não planos = 2 triângulos;
+ tampas planas; frustum com volume exato); sweep_path por propagação de
+ seções com juntas em MEIA-ESQUADRIA exata (caminhos em L/Z: volume
+ exatamente A·ΣL; caminho curvo: 0,000% vs A·L).
+-Revolução parcial e perfis no eixo: revolve(profile, angle) com tampas
+ planas (segmentos sobre o eixo viram arestas compartilhadas das duas
+ tampas); r=0 vira vértice-ápice sem círculo (cone 3/3/2 χ=2, volume
+ πR²H/3; esfera por perfil semicircular χ=2).
+-BVH (algo/bvh.py): AABBs por mediana, travessia iterativa; integrada ao
+ classify_point com cache na Tessellation (≥64 triângulos): resultados
+ idênticos à força bruta, ~135x mais rápida por consulta.
+-Leitor IGES (io/iges.read_iges): seções D/P de colunas fixas, entidades
+ 110/100/106 -> curvas do núcleo-K com (t0,t1); round-trips validados
+ (cilindro: costura + 2 círculos r exato; caixa: 12 arestas 2/3/4).
+-nucleok 0.2.0: 75 símbolos públicos (novos: fuse/common/cut,
+ chamfer_edge/fillet_edge, loft/sweep_path, transform_solid/
+ solid_from_tessellation/ensure_outward, BVH, tessellate_trimmed,
+ read_iges); README com status ✅ nas 6 camadas e roadmap pós-0.2
+ honesto (booleanas analíticas, IGES B-Rep, p-curves/assemblies STEP,
+ NURBS topológicas, offsets/shelling).
+
+
 [2026/07/11] — núcleo-K 0.1.0 (kernel B-Rep próprio, sem OCCT):
 
 Novo pacote independente `nucleok/` (única dependência: NumPy; zero imports
