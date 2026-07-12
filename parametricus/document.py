@@ -514,23 +514,24 @@ class Document:
         export_mesh(mesh, path)
         logger.info("[%s] exportado em: %s", self.name, path)
 
-    def export_step(self, path: str, deflection: float = 0.02,
-                    resolution: Optional[int] = None) -> str:
+    def export_step(self, path: str, resolution: Optional[int] = None,
+                    deflection: float = 0.02) -> str:
         """STEP AP214 via núcleo-K: analítico exato quando a árvore SDF
         é mapeável (primitivas + similaridades), facetado caso
-        contrário. Devolve o modo usado."""
+        contrário. Devolve o modo usado.
+
+        Assinatura espelha ``export_stl(path, resolution)``: o 2º
+        argumento posicional é a RESOLUÇÃO (usada só na rota de malha);
+        ``deflection`` controla o facetamento das rotas B-Rep."""
         from .brep import export_document_step
-        self._ensure_mesh(resolution or self.export_resolution) \
-            if self.body is None else None
         return export_document_step(self, path, deflection=deflection,
                                     resolution=resolution)
 
-    def export_iges(self, path: str, deflection: float = 0.02,
-                    resolution: Optional[int] = None) -> str:
-        """IGES 5.3 wireframe (arestas do B-Rep) via núcleo-K."""
+    def export_iges(self, path: str, resolution: Optional[int] = None,
+                    deflection: float = 0.02) -> str:
+        """IGES 5.3 wireframe (arestas do B-Rep) via núcleo-K; mesmo
+        contrato de ``export_step``."""
         from .brep import export_document_iges
-        self._ensure_mesh(resolution or self.export_resolution) \
-            if self.body is None else None
         return export_document_iges(self, path, deflection=deflection,
                                     resolution=resolution)
 

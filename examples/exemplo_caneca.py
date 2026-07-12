@@ -2,7 +2,9 @@
 Exemplo 2 — Caneca (revolução + casca + alça)
 =============================================
 Demonstra o fluxo esboço 2D -> revolução, a operação de casca (shell)
-e uniões suaves. A capacidade (ml) é um parâmetro de entrada: o raio
+e uniões suaves. A exportação usa STEP via núcleo-K (a árvore contém
+fillet_union/cantos arredondados, então sai pela rota de malha
+facetada; primitivas puras sairiam com superfícies analíticas exatas). A capacidade (ml) é um parâmetro de entrada: o raio
 interno é calculado por expressão a partir do volume desejado.
 
 Execução:  python examples/exemplo_caneca.py
@@ -69,13 +71,13 @@ doc.add_feature("Alça toroidal", lambda P: Torus(P["r_alca"], P["tubo_alca"]),
 doc.set_body(corpo)
 
 #print(doc.report(resolution=100))
-#doc.export_stl("caneca_350ml.stl", resolution=150)
+#doc.export_step("caneca_350ml.step", resolution=150)
 
 print("\n>>> Versão 500 ml — só o parâmetro de capacidade muda:\n")
 P.set("capacidade_ml", 500)
 P.set("altura_int", 110)
 print(doc.report(resolution=100))
-#doc.export_stl("caneca_500ml.stl", resolution=150)
+#doc.export_step("caneca_500ml.step", resolution=150)
 
 from parametricus.viewer import show_mesh
 show_mesh(doc.mesh, title="Caneca 500 ml", color="#d97a4a", show=True, engine="pyside6")

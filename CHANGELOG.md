@@ -1,5 +1,42 @@
 CHANGELOG
 
+[2026/07/11] — verificação com o exemplo da caneca (export_stl -> export_step):
+
+Rodar o exemplo real da caneca (fillet_union + cantos arredondados ->
+rota de malha) com export_step expôs três erros de implementação, todos
+corrigidos:
+-DESEMPENHO (bloqueante na prática): a cicatrização de T-vértices em
+ solid_from_tessellation era O(E·V_fronteira) e rodava em TODAS as
+ arestas — numa malha suave de marching cubes (onde cada triângulo é seu
+ próprio grupo coplanar e toda aresta é fronteira) isso custava 40 s dos
+ 60 s para 32 mil triângulos; na resolução 150 do exemplo levaria dezenas
+ de minutos. Agora a cicatrização é CIRÚRGICA: um Counter global de usos
+ por aresta não-dirigida identifica quais arestas NÃO fecham em
+ exatamente 2 usos, e só essas passam pelo split_chain (malhas já
+ casadas pulam o custo inteiro). O cancelamento de fendas de largura
+ zero foi movido para antes da checagem (e repetido após divisões).
+-DESEMPENHO: ensure_outward no fim de solid_from_tessellation
+ re-tesselava o B-Rep inteiro (7,7 s em 23 mil faces planas) só para
+ achar o sinal do volume; a orientação agora é decidida NO INÍCIO,
+ direto da malha soldada (einsum vetorizado; T invertido se negativo),
+ e o ensure_outward final foi removido. Resultado combinado: caneca
+ res=64: 29,6 s -> 2,7 s; res=150 (a do exemplo): 14,8 s, 47 MB, com
+ round-trip STEP a Δrel ≤ 8,5e-8 do volume da malha.
+-API (armadilha na troca export_stl -> export_step): export_stl aceita
+ resolution como 2º argumento POSICIONAL, mas export_step/export_iges
+ tinham deflection nessa posição — doc.export_step("caneca.step", 150)
+ interpretaria 150 como deflexão. Assinaturas corrigidas para espelhar
+ export_stl: export_step(path, resolution=None, deflection=0.02) (idem
+ export_iges); chamada posicional testada. Removidas também as linhas
+ redundantes de _ensure_mesh nesses métodos (document_to_solid já cuida
+ do rebuild).
+-examples/exemplo_caneca.py atualizado: export_stl -> export_step nos
+ dois pontos (caneca_350ml.step / caneca_500ml.step) e docstring
+ explicando qual rota de fidelidade a árvore da caneca usa.
+-Regressão completa verde: 72 (núcleo-K) + 30 (integração) + 71
+ (parametricus) asserções.
+
+
 [2026/07/11] — integração parametricus ⇄ núcleo-K (parametricus/brep.py):
 
 Fases 4.1 e 4.2 (STEP/IGES) concluídas SEM OCCT pela ponte entre o CAD
