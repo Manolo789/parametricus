@@ -137,12 +137,26 @@ def save_3mf(mesh: Mesh, path: str, unit: str = "millimeter") -> None:
 
 
 # ------------------------------------------------------------------ export
+def _save_step(mesh: Mesh, path: str) -> None:
+    from .brep import save_step
+    save_step(mesh, path)
+
+
+def _save_iges(mesh: Mesh, path: str) -> None:
+    from .brep import save_iges
+    save_iges(mesh, path)
+
+
 _EXPORTERS: Dict[str, Callable[[Mesh, str], None]] = {
     ".stl": lambda mesh, path: mesh.save_stl(path),
     ".obj": lambda mesh, path: mesh.save_obj(path),
     ".ply": lambda mesh, path: mesh.save_ply(path),
     ".glb": save_glb,
     ".3mf": save_3mf,
+    ".step": _save_step,
+    ".stp": _save_step,
+    ".iges": _save_iges,
+    ".igs": _save_iges,
 }
 
 

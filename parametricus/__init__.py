@@ -24,6 +24,7 @@ from .parameters import Parameter, ParameterSet, ParameterError
 from .document import Document, Feature
 from .mesher import Mesh, MeshStats, MeshGenerator, MarchingCubesGenerator, generate_mesh
 from .materials import Material, MATERIALS
+from . import brep
 from .io import (
     export_mesh, import_mesh, load_stl, load_obj,
     save_glb, save_3mf, MeshSDF,

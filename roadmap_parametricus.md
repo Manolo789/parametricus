@@ -175,7 +175,7 @@ Três recursos distintos com implementações que se apoiam no que já existe:
 ### 4.1 Importação: STL, OBJ, STEP
 
 - [X] **STL/OBJ (fácil):** *(v1.1.1: nó `MeshSDF` implementado sem dependências — distância exata ponto→triângulo pré-amostrada em grade + interpolação trilinear; sinal por paridade de raios; kNN via SciPy quando disponível)* parsers próprios (STL binário é o espelho do `save_stl` existente) ou `trimesh`, que já é backend opcional de visualização. Malha importada entra como novo nó `MeshSDF` — SDF por distância à malha (consulta por BVH; `trimesh.proximity` fornece pronto). Isso permite **booleanas entre peças importadas e geometria paramétrica**, um diferencial real da arquitetura SDF.
-- [~] **STEP:** rota mudou — em vez de OCCT, o repositório agora contém o **núcleo-K** (`nucleok/`), kernel B-Rep próprio (só NumPy). Leitor STEP próprio já cobre o subconjunto analítico manifold (PLANE/CYL/CONE/SPHERE/TORUS/REVOLUTION + LINE/CIRCLE/B-SPLINE); importar → `nucleok.tessellate` → `MeshSDF`. Falta: faces trimadas genéricas e assemblies.
+- [x] **STEP:** CONCLUÍDO pela rota núcleo-K (`parametricus/brep.py`): `load_step(path)` usa o leitor STEP próprio → tesselação → `MeshSDF`, pronto para booleanas com geometria paramétrica (`load_step("peça.step") - Cylinder(4, 99)`). Sem OCCT. Restam no núcleo-K: p-curves genéricas e assemblies.
 
 ### 4.2 Exportação: STEP, IGES, PLY, GLTF, 3MF
 
@@ -184,7 +184,7 @@ Em ordem de custo/benefício:
 - [X] 1. **PLY** — formato trivial, mesmo padrão do `save_stl`/`save_obj` atuais; ~50 linhas.
 - [X] 2. **GLTF/GLB** *(v1.1.1: escrita direta do GLB, sem dependências — `save_glb`/`doc.export("peca.glb")`)* — via `trimesh.export` (opcional) ou escrita direta do GLB (binário simples); útil para web/preview.
 - [X] 3. **3MF** *(v1.1.1: ZIP + XML próprios — `save_3mf`/`doc.export("peca.3mf")`)* — ZIP + XML; escrita própria viável, relevante para impressão 3D.
-- [~] 4. **STEP/IGES** — rota sem OCCT: o **núcleo-K** escreve STEP AP214 (MANIFOLD_SOLID_BREP) e IGES wireframe com código próprio. Sólidos construídos no núcleo-K (primitivas/extrusão/revolução) exportam com geometria analítica EXATA e round-trip validado; para SDFs do parametricus a exportação continua sendo malha (conversão com perda documentada) até existir reconstrução de superfícies.
+- [x] 4. **STEP/IGES** — CONCLUÍDO pela ponte `parametricus/brep.py` (sem OCCT), com três níveis automáticos de fidelidade em `doc.export("peça.step")`: (1) árvore SDF de primitivas+similaridades → B-Rep ANALÍTICO EXATO do núcleo-K (superfícies cilíndricas/esféricas/tóricas/cônicas reais no arquivo — sem perda); (2) árvores com booleanas/espelho → booleanas B-Rep do núcleo-K (facetadas com deflexão controlada, topologicamente válidas, round-trip Δ=0); (3) qualquer outro nó → marching cubes → `solid_from_tessellation` → STEP facetado (a conversão com perda prevista, agora só como último recurso). IGES 5.3 wireframe pelas mesmas três rotas.
 
 Estruturar tudo em `parametricus/io/` com registro por extensão (`doc.export("peca.step")` despacha pelo sufixo).
 

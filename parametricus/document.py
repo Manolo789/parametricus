@@ -497,11 +497,42 @@ class Document:
 
     # ----------------------------------------------------------- exportação
     def export(self, path: str, resolution: Optional[int] = None) -> None:
-        """Exporta despachando pela extensão (.stl/.obj/.ply — Fase 4.2)."""
+        """Exporta despachando pela extensão (.stl/.obj/.ply/.glb/.3mf/
+        .step/.iges — Fase 4.2). Para STEP/IGES usa a ponte com o
+        núcleo-K, preferindo a rota ANALÍTICA exata quando a árvore SDF
+        mapeia para o B-Rep (ver :mod:`parametricus.brep`)."""
+        import os as _os
+        ext = _os.path.splitext(path)[1].lower()
+        if ext in (".step", ".stp"):
+            self.export_step(path, resolution=resolution)
+            return
+        if ext in (".iges", ".igs"):
+            self.export_iges(path, resolution=resolution)
+            return
         from .io import export_mesh
         mesh = self._ensure_mesh(resolution or self.export_resolution)
         export_mesh(mesh, path)
         logger.info("[%s] exportado em: %s", self.name, path)
+
+    def export_step(self, path: str, deflection: float = 0.02,
+                    resolution: Optional[int] = None) -> str:
+        """STEP AP214 via núcleo-K: analítico exato quando a árvore SDF
+        é mapeável (primitivas + similaridades), facetado caso
+        contrário. Devolve o modo usado."""
+        from .brep import export_document_step
+        self._ensure_mesh(resolution or self.export_resolution) \
+            if self.body is None else None
+        return export_document_step(self, path, deflection=deflection,
+                                    resolution=resolution)
+
+    def export_iges(self, path: str, deflection: float = 0.02,
+                    resolution: Optional[int] = None) -> str:
+        """IGES 5.3 wireframe (arestas do B-Rep) via núcleo-K."""
+        from .brep import export_document_iges
+        self._ensure_mesh(resolution or self.export_resolution) \
+            if self.body is None else None
+        return export_document_iges(self, path, deflection=deflection,
+                                    resolution=resolution)
 
     def export_stl(self, path: str, resolution: Optional[int] = None) -> None:
         mesh = self._ensure_mesh(resolution or self.export_resolution)

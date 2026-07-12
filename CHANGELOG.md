@@ -1,5 +1,50 @@
 CHANGELOG
 
+[2026/07/11] — integração parametricus ⇄ núcleo-K (parametricus/brep.py):
+
+Fases 4.1 e 4.2 (STEP/IGES) concluídas SEM OCCT pela ponte entre o CAD
+paramétrico (SDF) e o kernel B-Rep próprio:
+-Exportação com TRÊS níveis automáticos de fidelidade em
+ doc.export("peça.step") / doc.export_step():
+ (1) "analítico" — se a árvore SDF é composta de primitivas mapeáveis
+  (Esfera, Caixa, Cilindro, Cone/tronco com ápice via revolve, Toro,
+  Extrusão de CircleProfile/RectProfile/PolygonProfile, Revolução de
+  PolygonProfile, toro por Revolve de círculo transladado) e
+  similaridades (Translate/Rotate/Scale), o STEP AP214 sai com as
+  superfícies analíticas EXATAS do núcleo-K — CYLINDRICAL_SURFACE etc.
+  no arquivo, sem perda (testado: cadeia Translate∘Rotate∘Scale com
+  volume 8·1.5³ = 27 exato);
+ (2) "facetado (booleanas B-Rep)" — árvores com Union_/Intersection/
+  Difference/Mirror resolvem a combinação pelas booleanas do núcleo-K
+  (facetado com deflexão controlada, B-Rep VÁLIDO, round-trip STEP com
+  Δ = 0);
+ (3) "facetado (malha)" — nós fora do vocabulário (SmoothUnion, Shell,
+  Round, arrays, MeshSDF, ...) caem para marching cubes →
+  solid_from_tessellation → STEP (a conversão com perda documentada no
+  roadmap, agora apenas como último recurso; volume preservado a 1e-6).
+-Despacho por extensão: .step/.stp/.iges/.igs registrados em
+ io._EXPORTERS (malha → STEP facetado) e interceptados em
+ Document.export para preferir a rota exata; novos Document.export_step
+ e Document.export_iges devolvem o modo usado.
+-Importação (4.1): brep.load_step(path) → leitor STEP do núcleo-K →
+ tesselação → MeshSDF, pronto para booleanas com o paramétrico
+ (load_step("peça.step") - Cylinder(4, 99)); load_step_mesh/
+ load_step_solids para malha/B-Rep crus.
+-Utilitários da ponte: mesh_to_solid, solid_to_mesh, solid_to_sdf,
+ node_to_solid (mapa recursivo com flag de exatidão), document_to_solid.
+-Correção no núcleo-K exposta pela integração: solid_from_tessellation
+ agora CANCELA pares dirigidos opostos (fendas de largura zero da
+ cicatrização) e descarta loops com <3 arestas — eliminava loops
+ degenerados que, no round-trip STEP, se fundiam ao loop externo e
+ quebravam o ear clipping (Δ de volume −1.63 no caso caixa−cilindro;
+ agora Δ = 0).
+-Nova suíte tests/test_integration.py: 30 asserções (todas passando);
+ test_nucleok (72) e test_roadmap (71) continuam verdes. Dependência é
+ unidirecional: parametricus → nucleok (import guardado com mensagem
+ clara); nucleok segue sem importar o parametricus (verificado em
+ teste).
+
+
 [2026/07/11] — núcleo-K 0.2.0 (kernel completo: booleanas, features, loft/sweep):
 
 Os oito itens pendentes do 0.1 foram implementados e testados (suíte
